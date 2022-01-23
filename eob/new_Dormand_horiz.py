@@ -211,15 +211,22 @@ def ODE_pendulum(x, arg, k, additionalArgs):
 
 class DOPR853:
 
-    def __init__(self, ode, stopping_criterion=None, tmax=1e300, max_step=int(1e6), use_gpu=True):
+    def __init__(self, ode, stopping_criterion=None, tmax=1e300, max_step=int(1e6), use_gpu=True, read_out_to_cpu=False):
         self.ode = ode
         self.stopping_criterion = stopping_criterion
         self.tmax, self.max_step = tmax, max_step
+        self.use_gpu = use_gpu
+        self.read_out_to_cpu = read_out_to_cpu
 
         if use_gpu:
             self.xp = xp
         else:
             self.xp = np
+
+        if read_out_to_cpu:
+            self.xp_read_out = np
+        else:
+            self.xp_read_out = xp
 
     def dormandPrinceSteps(self,
         x,
@@ -461,10 +468,10 @@ class DOPR853:
         """
 
 
-        solOld = condBound  # boundary conditions
+        solOld = self.xp.asarray(condBound)  # boundary conditions
         nODE, numSys = solOld.shape
 
-        additionalArgs = argsData
+        additionalArgs = self.xp.asarray(argsData)
 
         x = self.xp.zeros(numSys)
         if hInit is None:
@@ -517,19 +524,23 @@ class DOPR853:
         #denseOutputLoc[step_num] = x[i]
         # Use a while loop as it is easier to keep stepping regardless of
 
-        denseOutput = self.xp.zeros((self.max_step, nODE, numSys))
-        denseDerivOutput = self.xp.zeros((self.max_step, nODE, numSys))
-        denseOutputLoc = self.xp.zeros((self.max_step, numSys))
+        denseOutput = self.xp_read_out.zeros((self.max_step, nODE, numSys))
+        #denseDerivOutput = self.xp_read_out.zeros((self.max_step, nODE, numSys))
+        denseOutputLoc = self.xp_read_out.zeros((self.max_step, numSys))
 
-        denseOutput[0, :, :] = solOld
-        denseOutputLoc[0, :] = x
+        if self.use_gpu and self.read_out_to_cpu:
+            denseOutput[0, :, :] = solOld.get()
+            denseOutputLoc[0, :] = x.get()
+        else:
+            denseOutput[0, :, :] = solOld
+            denseOutputLoc[0, :] = x
 
         step_num = self.xp.zeros(numSys, dtype=int)
         individual_loop_flag = self.xp.ones_like(step_num, dtype=bool)
         ii = 0
-        import time
+        #import time
 
-        st = time.perf_counter()
+        #st = time.perf_counter()
         
         while (loopFlag):
 
@@ -582,28 +593,30 @@ class DOPR853:
             read_out_index_update = self.xp.tile(index_update, nODE)
             read_out_ode_dim = self.xp.repeat(self.xp.arange(nODE), len(index_update))
 
-            denseOutput[(read_out_step, read_out_ode_dim, read_out_index_update)] = solOld[:, index_update].flatten()
-            denseOutputLoc[(step_num[index_update], index_update)] = x[index_update]
+            if self.use_gpu and self.read_out_to_cpu:
+                denseOutput[(read_out_step, read_out_ode_dim, read_out_index_update)] = solOld[:, index_update].flatten().get()
+                ddenseOutputLoc[(step_num[index_update], index_update)] = x[index_update].get()
+            else:
+                denseOutput[(read_out_step, read_out_ode_dim, read_out_index_update)] = solOld[:, index_update].flatten()
+                denseOutputLoc[(step_num[index_update], index_update)] = x[index_update]
 
             if self.stopping_criterion is not None:
-                stop = self.stopping_criterion(step_num, denseOutput)
+                stop = self.xp.asarray(self.stopping_criterion(step_num, denseOutput))
             else:
                 stop = self.xp.ones_like(x, dtype=bool)
-
+            
             individual_loop_flag[(x >= self.tmax) | (step_num >= self.max_step - 1) | stop] = False  #  | (solNew[0] < 6.0)] = False
             
             if self.xp.all(~individual_loop_flag):
                 loopFlag = False
 
             ii += 1
-            if ii % 100 == 0:
-                et = time.perf_counter()
+            #if ii % 100 == 0:
+                #et = time.perf_counter()
                 #print((et - st)/ ii)
-                print(ii)
+                #print(ii)
 
-        et = time.perf_counter()
-        #print((et - st), "all")
-        return (denseOutputLoc, denseOutput, denseDerivOutput, step_num)
+        return (denseOutputLoc, denseOutput, step_num) # denseDerivOutput
 
 
 def stopping_criterion(step_num, denseOutput):

@@ -122,7 +122,7 @@ class SEOBNRv4PHM:
         self.nparams = 2
 
         #self.HTM_AC = HTMalign_AC()
-        self.integrator = DOPR853(ODEWrapper(use_gpu=use_gpu), stopping_criterion=stopping_criterion, tmax=1e7, max_step=500, use_gpu=self.use_gpu)  # use_gpu=use_gpu)
+        self.integrator = DOPR853(ODEWrapper(use_gpu=use_gpu), stopping_criterion=stopping_criterion, tmax=1e7, max_step=500, use_gpu=self.use_gpu, read_out_to_cpu=False)  # self.use_gpu)  # use_gpu=use_gpu)
 
     def _sanity_check_modes(self, ells, mms):
         for (ell, mm) in zip(ells, mms):
@@ -223,7 +223,7 @@ class SEOBNRv4PHM:
 
         # TODO: make adjustable
         # TODO: debug dopr?
-        t, traj, deriv, num_steps = self.integrator.integrate(
+        t, traj, num_steps = self.integrator.integrate(
                 condBound.copy(), argsData.copy()
             )
 
@@ -355,7 +355,7 @@ if __name__ == "__main__":
     import time
     n = 5
     st = time.perf_counter()
-    for _ in range(n):
+    for jj in range(n):
         eob(
                 m1,
                 m2,
@@ -370,6 +370,7 @@ if __name__ == "__main__":
                 #modes=modes,
                 #fs=fs,
             )
+        print(jj)
     et = time.perf_counter()
     print((et - st)/n, "done")
     # eob(m1, m2, chi1z, chi2z, distance, phiRef)
