@@ -9,4 +9,7 @@ void compute_hlms_wrap(cmplx* hlms, double* r_arr, double* phi_arr, double* pr_a
 
 void root_find_all_wrap(double* xOut, double* x0In, double*argsIn, double* additionalArgsIn, int max_iter, double err, int numBinAll, int n, int num_args, int num_add_args);
 void root_find_scalar_all_wrap(double* pr_res, double* start_bounds, double*argsIn, double* additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args);
+
+void ODE_wrap(double* x, double* arg, double* k, double* additionalArgs, int numSys);
+
 #endif // __EOB_HH__

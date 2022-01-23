@@ -12,10 +12,15 @@ try:
     from pyEOB import compute_hlms as compute_hlms_gpu
     from pyEOB import root_find_all as root_find_all_gpu
     from pyEOB import root_find_scalar_all as root_find_scalar_all_gpu
+    from pyEOB import ODE as ODE_gpu
+    gpu_available = True
+    from cupy.cuda.runtime import setDevice
+    setDevice(2)
 
 except (ImportError, ModuleNotFoundError) as e:
     print("No CuPy")
     import numpy as xp
+    gpu_available = False
 
 sys.path.append(
     "/Users/michaelkatz/Research/EOBGPU/eob_development/toys/hamiltonian_prototype/"
@@ -26,14 +31,37 @@ sys.path.append("/home/mlk667/EOBGPU/eob_development/toys/hamiltonian_prototype/
 from pyEOB_cpu import compute_hlms as compute_hlms_cpu
 from pyEOB_cpu import root_find_all as root_find_all_cpu
 from pyEOB_cpu import root_find_scalar_all as root_find_scalar_all_cpu
+from pyEOB_cpu import ODE as ODE_cpu
 
-from HTMalign_AC import HTMalign_AC
-from RR_force_aligned import RR_force_2PN
-from initial_conditions_aligned import computeIC
+#from HTMalign_AC import HTMalign_AC
+#from RR_force_aligned import RR_force_2PN
+#from initial_conditions_aligned import computeIC
 
 def stopping_criterion(step_num, denseOutput):
     stop = denseOutput[(step_num, np.zeros_like(step_num), np.arange(len(step_num)))] < 6.0
     return stop
+
+class ODEWrapper:
+    def __init__(self, use_gpu=False):
+        if use_gpu:
+            self.xp = xp
+            self.ode = ODE_gpu
+        else:
+            self.xp = np
+            self.ode = ODE_cpu
+
+    def __call__(self, x, args, k, additionalArgs):
+        reshape = k.shape
+        numSys = reshape[-1]
+        x_in = x.flatten()
+        args_in = args.flatten()
+        k_in = k.flatten()
+        additionalArgs_in = additionalArgs.flatten()
+
+        self.ode(x_in, args_in, k_in, additionalArgs_in, numSys)
+
+        k[:] = k_in.reshape(reshape)
+
 
 class SEOBNRv4PHM:
     def __init__(self, max_init_len=-1, use_gpu=False, **kwargs):
@@ -94,7 +122,7 @@ class SEOBNRv4PHM:
         self.nparams = 2
 
         #self.HTM_AC = HTMalign_AC()
-        self.integrator = DOPR853(ODE_1, stopping_criterion=stopping_criterion, tmax=1e7, max_step=2000)  # use_gpu=use_gpu)
+        self.integrator = DOPR853(ODEWrapper(use_gpu=use_gpu), stopping_criterion=stopping_criterion, tmax=1e7, max_step=500, use_gpu=self.use_gpu)  # use_gpu=use_gpu)
 
     def _sanity_check_modes(self, ells, mms):
         for (ell, mm) in zip(ells, mms):
@@ -196,13 +224,14 @@ class SEOBNRv4PHM:
         # TODO: make adjustable
         # TODO: debug dopr?
         t, traj, deriv, num_steps = self.integrator.integrate(
-            condBound, argsData
-        )
+                condBound.copy(), argsData.copy()
+            )
+
         num_steps_max = num_steps.max().item()
         
         return (
-            t[:, :num_steps_max] * self.xp.asarray(mt[:, self.xp.newaxis]) * MTSUN_SI,
-            traj[:, :, :num_steps_max],
+            (t[:num_steps_max, :] * self.xp.asarray(mt[self.xp.newaxis, :]) * MTSUN_SI).T,
+            traj[:num_steps_max, :, :].transpose(2, 1, 0),
             num_steps,
         )
 
@@ -281,6 +310,7 @@ class SEOBNRv4PHM:
         t, traj, num_steps = self.run_trajectory(
             r0, pphi0, pr0, m1, m2, chi1z, chi2z, fs=fs
         )
+
         hlms = self.get_hlms(traj, m1, m2, chi1z, chi2z, num_steps, ells, mms)
 
         phi = traj[:, 1]
@@ -301,11 +331,13 @@ class SEOBNRv4PHM:
 
 
 if __name__ == "__main__":
-    eob = SEOBNRv4PHM()
+    from cupy.cuda.runtime import setDevice
+    setDevice(2)
+    eob = SEOBNRv4PHM(use_gpu=gpu_available)
 
-    num = 1000
-    m1 = np.full(num, 8.0)
-    m2 = np.full(num, 2.0)
+    num = 100000
+    m1 = np.full(num, 35.0)
+    m2 = np.full(num, 30.0)
     # chi1x,
     # chi1y,
     chi1z = np.full(num, 0.6)
@@ -320,21 +352,26 @@ if __name__ == "__main__":
     psi = np.full(num, np.pi / 6.0)
     t_ref = np.full(num, np.pi / 7.0)
 
-    eob = SEOBNRv4PHM()
-    eob(
-            m1,
-            m2,
-            # chi1x,
-            # chi1y,
-            chi1z,
-            # chi2x,
-            # chi2y,
-            chi2z,
-            distance,
-            phiRef,
-            #modes=modes,
-            #fs=fs,
-        )
+    import time
+    n = 5
+    st = time.perf_counter()
+    for _ in range(n):
+        eob(
+                m1,
+                m2,
+                # chi1x,
+                # chi1y,
+                chi1z,
+                # chi2x,
+                # chi2y,
+                chi2z,
+                distance,
+                phiRef,
+                #modes=modes,
+                #fs=fs,
+            )
+    et = time.perf_counter()
+    print((et - st)/n, "done")
     # eob(m1, m2, chi1z, chi2z, distance, phiRef)
     breakpoint()
     bbh = BBHWaveformTD(lisa=False, use_gpu=False)

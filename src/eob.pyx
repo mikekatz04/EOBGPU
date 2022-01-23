@@ -13,7 +13,7 @@ cdef extern from "EOB.hh":
 
     void root_find_all_wrap(double* xOut, double* x0In, double*argsIn, double* additionalArgsIn, int max_iter, double err, int numBinAll, int n, int num_args, int num_add_args);
     void root_find_scalar_all_wrap(double* pr_res, double* start_bounds, double*argsIn, double* additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args);
-
+    void ODE_wrap(double* x, double* arg, double* k, double* additionalArgs, int numSys);
 
 
 @pointer_adjust
@@ -58,3 +58,13 @@ def root_find_scalar_all(pr_res, start_bounds, argsIn, additionalArgsIn, max_ite
     cdef size_t additionalArgsIn_in = additionalArgsIn
 
     root_find_scalar_all_wrap(<double*> pr_res_in, <double*> start_bounds_in, <double*> argsIn_in, <double*> additionalArgsIn_in, max_iter, err, numBinAll, num_args, num_add_args)
+
+@pointer_adjust
+def ODE(x, arg, k, additionalArgs, numSys):
+
+    cdef size_t x_in = x
+    cdef size_t arg_in = arg
+    cdef size_t k_in = k
+    cdef size_t additionalArgs_in = additionalArgs
+
+    ODE_wrap(<double*> x_in, <double*> arg_in, <double*> k_in, <double*> additionalArgs_in, numSys)

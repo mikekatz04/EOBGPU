@@ -3,6 +3,8 @@ import numpy as np
 try:
     import cupy as xp
     gpu_available = True
+    from cupy.cuda.runtime import setDevice
+    setDevice(2)
 
 except ModuleNotFoundError:
     import numpy as xp
@@ -596,12 +598,11 @@ class DOPR853:
             ii += 1
             if ii % 100 == 0:
                 et = time.perf_counter()
-                print((et - st)/ ii)
+                #print((et - st)/ ii)
                 print(ii)
 
         et = time.perf_counter()
-        print((et - st)/ ii, "all")
-        exit()
+        #print((et - st), "all")
         return (denseOutputLoc, denseOutput, denseDerivOutput, step_num)
 
 
