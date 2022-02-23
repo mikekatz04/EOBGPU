@@ -13,9 +13,10 @@ try:
     from pyEOB import root_find_all as root_find_all_gpu
     from pyEOB import root_find_scalar_all as root_find_scalar_all_gpu
     from pyEOB import ODE as ODE_gpu
+    from pyEOB import ODE_Ham_align_AD as ODE_Ham_align_AD_gpu
     gpu_available = True
     from cupy.cuda.runtime import setDevice
-    setDevice(2)
+    setDevice(6)
 
 except (ImportError, ModuleNotFoundError) as e:
     print("No CuPy")
@@ -32,25 +33,36 @@ from pyEOB_cpu import compute_hlms as compute_hlms_cpu
 from pyEOB_cpu import root_find_all as root_find_all_cpu
 from pyEOB_cpu import root_find_scalar_all as root_find_scalar_all_cpu
 from pyEOB_cpu import ODE as ODE_cpu
+from pyEOB_cpu import ODE_Ham_align_AD as ODE_Ham_align_AD_cpu
 
 #from HTMalign_AC import HTMalign_AC
 #from RR_force_aligned import RR_force_2PN
 #from initial_conditions_aligned import computeIC
 
-def stopping_criterion(step_num, denseOutput):
-    stop = denseOutput[(step_num, np.zeros_like(step_num), np.arange(len(step_num)))] < 6.0
-    return stop
+class StoppingCriterion:
+    def __init__(self, use_gpu=False, read_out_to_cpu=False):
+        self.use_gpu = use_gpu 
+        self.read_out_to_cpu = read_out_to_cpu
+
+    def __call__(self, step_num, denseOutput):
+        if self.use_gpu and self.read_out_to_cpu:
+            stop = denseOutput[(step_num.get(), np.zeros_like(step_num.get()), np.arange(len(step_num)))] < 6.0
+        else:
+            stop = denseOutput[(step_num, np.zeros_like(step_num), np.arange(len(step_num)))] < 3.0
+        return stop
 
 class ODEWrapper:
     def __init__(self, use_gpu=False):
         if use_gpu:
             self.xp = xp
-            self.ode = ODE_gpu
+            self.ode = ODE_Ham_align_AD_gpu  # ODE_gpu
         else:
             self.xp = np
-            self.ode = ODE_cpu
+            self.ode = ODE_Ham_align_AD_cpu  # ODE_cpu
+        self.count = 0
 
     def __call__(self, x, args, k, additionalArgs):
+        self.count += 1
         reshape = k.shape
         numSys = reshape[-1]
         x_in = x.flatten()
@@ -122,7 +134,7 @@ class SEOBNRv4PHM:
         self.nparams = 2
 
         #self.HTM_AC = HTMalign_AC()
-        self.integrator = DOPR853(ODEWrapper(use_gpu=use_gpu), stopping_criterion=stopping_criterion, tmax=1e7, max_step=500, use_gpu=self.use_gpu, read_out_to_cpu=False)  # self.use_gpu)  # use_gpu=use_gpu)
+        self.integrator = DOPR853(ODEWrapper(use_gpu=True), stopping_criterion=StoppingCriterion(True, read_out_to_cpu=False), tmax=1e7*1e6, max_step=300, use_gpu=True, read_out_to_cpu=False)  # self.use_gpu)  # use_gpu=use_gpu)
 
     def _sanity_check_modes(self, ells, mms):
         for (ell, mm) in zip(ells, mms):
@@ -209,7 +221,7 @@ class SEOBNRv4PHM:
 
         return r0, pphi0, pr0
 
-    def run_trajectory(self, r0, pphi0, pr0, m_1, m_2, chi_1, chi_2, fs=10.0, **kwargs):
+    def run_trajectory(self, r0, pphi0, pr0, m_1, m_2, chi_1, chi_2, fs=20.0, **kwargs):
 
         # TODO: constants from LAL
         mt = m_1 + m_2  # Total mass in solar masses
@@ -217,15 +229,20 @@ class SEOBNRv4PHM:
         m_1_scaled = m_1 / mt
         m_2_scaled = m_2 / mt
         dt = 1.0 / 16384 / (mt * MTSUN_SI)
+        K = np.zeros_like(m_1_scaled)
+        d5 = np.zeros_like(m_1_scaled)
+        dSO = np.zeros_like(m_1_scaled)
+        dSS = np.zeros_like(m_1_scaled)
 
         condBound = self.xp.array([r0, np.full_like(r0, 0.0), pr0, pphi0])
-        argsData = self.xp.array([m_1_scaled, m_2_scaled, chi_1, chi_2])
+        argsData = self.xp.array([m_1_scaled, m_2_scaled, chi_1, chi_2, K, d5, dSO, dSS])
 
         # TODO: make adjustable
         # TODO: debug dopr?
         t, traj, num_steps = self.integrator.integrate(
                 condBound.copy(), argsData.copy()
             )
+        
 
         num_steps_max = num_steps.max().item()
         
@@ -289,7 +306,7 @@ class SEOBNRv4PHM:
         distance,
         phiRef,
         modes=None,
-        fs=10.0,  # Hz
+        fs=20.0,  # Hz
     ):
         if modes is not None:
             ells = self.xp.asarray([ell for ell, mm in modes], dtype=self.xp.int32)
@@ -306,14 +323,16 @@ class SEOBNRv4PHM:
         self.num_bin_all = len(m1)
 
         r0, pphi0, pr0 = self.get_initial_conditions(m1, m2, chi1z, chi2z, fs=fs)
-
+        
         t, traj, num_steps = self.run_trajectory(
             r0, pphi0, pr0, m1, m2, chi1z, chi2z, fs=fs
         )
-
+        self.traj = traj
+        """
         hlms = self.get_hlms(traj, m1, m2, chi1z, chi2z, num_steps, ells, mms)
 
-        phi = traj[:, 1]
+        phi =  traj[:, 1]
+        
         self.lengths = num_steps.astype(self.xp.int32)
         num_steps_max = num_steps.max()
         self.t = t[:, :num_steps_max]
@@ -328,22 +347,25 @@ class SEOBNRv4PHM:
 
         self.ells = ells
         self.mms = mms
+        """
 
 
 if __name__ == "__main__":
     from cupy.cuda.runtime import setDevice
-    setDevice(2)
-    eob = SEOBNRv4PHM(use_gpu=gpu_available)
+    setDevice(6)
+    eob = SEOBNRv4PHM(use_gpu=True)  # gpu_available)
 
-    num = 100000
-    m1 = np.full(num, 35.0)
-    m2 = np.full(num, 30.0)
+    mt = 40.0 # Total mass in solar masses
+    q = 2.5
+    num = int(1e4)
+    m1 = np.full(num, mt * q / (1.+q))
+    m2 = np.full(num, mt / (1.+q))
     # chi1x,
     # chi1y,
-    chi1z = np.full(num, 0.6)
+    chi1z = np.full(num, 0.0001)
     # chi2x,
     # chi2y,
-    chi2z = np.full(num, 0.05)
+    chi2z = np.full(num, 0.0001)
     distance = np.full(num, 100.0)  # Mpc
     phiRef = np.full(num, 0.0)
     inc = np.full(num, np.pi / 3.0)
@@ -372,9 +394,9 @@ if __name__ == "__main__":
             )
         print(jj)
     et = time.perf_counter()
-    print((et - st)/n, "done")
-    # eob(m1, m2, chi1z, chi2z, distance, phiRef)
+    print((et - st)/n/num, "done")
     breakpoint()
+    # eob(m1, m2, chi1z, chi2z, distance, phiRef)
     bbh = BBHWaveformTD(lisa=False, use_gpu=False)
 
     out = bbh(

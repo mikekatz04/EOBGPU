@@ -11,5 +11,5 @@ void root_find_all_wrap(double* xOut, double* x0In, double*argsIn, double* addit
 void root_find_scalar_all_wrap(double* pr_res, double* start_bounds, double*argsIn, double* additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args);
 
 void ODE_wrap(double* x, double* arg, double* k, double* additionalArgs, int numSys);
-
+void ODE_Ham_align_AD_wrap(double* x, double* arg, double* k, double* additionalArgs, int numSys);
 #endif // __EOB_HH__

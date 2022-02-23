@@ -558,16 +558,20 @@ class DOPR853:
             ks = [self.xp.zeros((nODE, numSysTemp)) for _ in range(10)]
             err = self.xp.zeros(numSysTemp)
             flagSuccess = self.xp.zeros(numSysTemp, dtype=bool)
-
+        #0.000857
+            
             # Compute the steps to iterate to the next timestep
+            
             self.dormandPrinceSteps(xTemp, solOldTemp, hTemp, additionalArgsTemp, *ks)
 
+        # 0.00344 (~0.00258)
             # TODO: improve
             ks_error = [ks[i - 1] for i in [1, 2, 3, 6, 7, 8, 9, 10]]
 
             # Compute the error
             self.error(err, solOldTemp, solNewTemp, hTemp, *ks_error)
-
+        # 0.00427 (0.000808)
+        
             # Store the old values
             hOldTemp[:] = hTemp
             #xOldTemp[:] = xTemp
@@ -575,6 +579,8 @@ class DOPR853:
             # # Check if the error was acceptable
             self.controllerSuccess(flagSuccess, err, errOldTemp, previousRejectTemp, hTemp, xTemp)
 
+        # 0.00648 (0.00221)
+            
             solOldTemp[:, flagSuccess] = solNewTemp[:, flagSuccess]
 
             xTemp[flagSuccess] = xTemp[flagSuccess] + hOldTemp[flagSuccess]
@@ -585,6 +591,8 @@ class DOPR853:
             errOld[individual_loop_flag] = errOldTemp
             previousReject[individual_loop_flag] = previousRejectTemp
 
+        # 0.00749475707532838 (0.001)
+        
             index_update = self.xp.arange(individual_loop_flag.shape[0])[individual_loop_flag][flagSuccess]
             
             step_num[index_update] += 1
@@ -592,10 +600,11 @@ class DOPR853:
             read_out_step = self.xp.tile(step_num[index_update], nODE)
             read_out_index_update = self.xp.tile(index_update, nODE)
             read_out_ode_dim = self.xp.repeat(self.xp.arange(nODE), len(index_update))
-
+            
+            # 0.007710501374676823 (0.00022)
             if self.use_gpu and self.read_out_to_cpu:
-                denseOutput[(read_out_step, read_out_ode_dim, read_out_index_update)] = solOld[:, index_update].flatten().get()
-                ddenseOutputLoc[(step_num[index_update], index_update)] = x[index_update].get()
+                denseOutput[(read_out_step.get(), read_out_ode_dim.get(), read_out_index_update.get())] = solOld[:, index_update].flatten().get()
+                denseOutputLoc[(step_num[index_update].get(), index_update.get())] = x[index_update].get()
             else:
                 denseOutput[(read_out_step, read_out_ode_dim, read_out_index_update)] = solOld[:, index_update].flatten()
                 denseOutputLoc[(step_num[index_update], index_update)] = x[index_update]
@@ -611,10 +620,12 @@ class DOPR853:
                 loopFlag = False
 
             ii += 1
-            #if ii % 100 == 0:
+            #if ii % 1 == 0:
                 #et = time.perf_counter()
                 #print((et - st)/ ii)
                 #print(ii)
+            # 0.008480359460227191 (0.0.00077)
+            
 
         return (denseOutputLoc, denseOutput, step_num) # denseDerivOutput
 

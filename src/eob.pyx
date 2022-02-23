@@ -14,7 +14,7 @@ cdef extern from "EOB.hh":
     void root_find_all_wrap(double* xOut, double* x0In, double*argsIn, double* additionalArgsIn, int max_iter, double err, int numBinAll, int n, int num_args, int num_add_args);
     void root_find_scalar_all_wrap(double* pr_res, double* start_bounds, double*argsIn, double* additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args);
     void ODE_wrap(double* x, double* arg, double* k, double* additionalArgs, int numSys);
-
+    void ODE_Ham_align_AD_wrap(double* x, double* arg, double* k, double* additionalArgs, int numSys);
 
 @pointer_adjust
 def compute_hlms(hlms, r_arr, phi_arr, pr_arr, L_arr,
@@ -68,3 +68,14 @@ def ODE(x, arg, k, additionalArgs, numSys):
     cdef size_t additionalArgs_in = additionalArgs
 
     ODE_wrap(<double*> x_in, <double*> arg_in, <double*> k_in, <double*> additionalArgs_in, numSys)
+
+@pointer_adjust
+def ODE_Ham_align_AD(x, arg, k, additionalArgs, numSys):
+
+    cdef size_t x_in = x
+    cdef size_t arg_in = arg
+    cdef size_t k_in = k
+    cdef size_t additionalArgs_in = additionalArgs
+
+    ODE_Ham_align_AD_wrap(<double*> x_in, <double*> arg_in, <double*> k_in, <double*> additionalArgs_in, numSys)
+
