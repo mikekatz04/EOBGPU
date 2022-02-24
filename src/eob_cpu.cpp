@@ -687,8 +687,8 @@ static CYTHON_INLINE float __PYX_NAN() {
   #endif
 #endif
 
-#define __PYX_HAVE__pyEOB_cpu
-#define __PYX_HAVE_API__pyEOB_cpu
+#define __PYX_HAVE__eob__pyEOB_cpu
+#define __PYX_HAVE_API__eob__pyEOB_cpu
 /* Early includes */
 #include <string.h>
 #include <stdio.h>
@@ -1655,12 +1655,12 @@ static PyTypeObject *__pyx_ptype_5numpy_flexible = 0;
 static PyTypeObject *__pyx_ptype_5numpy_character = 0;
 static PyTypeObject *__pyx_ptype_5numpy_ufunc = 0;
 
-/* Module declarations from 'pyEOB_cpu' */
-#define __Pyx_MODULE_NAME "pyEOB_cpu"
-extern int __pyx_module_is_main_pyEOB_cpu;
-int __pyx_module_is_main_pyEOB_cpu = 0;
+/* Module declarations from 'eob.pyEOB_cpu' */
+#define __Pyx_MODULE_NAME "eob.pyEOB_cpu"
+extern int __pyx_module_is_main_eob__pyEOB_cpu;
+int __pyx_module_is_main_eob__pyEOB_cpu = 0;
 
-/* Implementation of 'pyEOB_cpu' */
+/* Implementation of 'eob.pyEOB_cpu' */
 static PyObject *__pyx_builtin_ImportError;
 static const char __pyx_k_k[] = "k";
 static const char __pyx_k_n[] = "n";
@@ -1707,7 +1707,6 @@ static const char __pyx_k_num_modes[] = "num_modes";
 static const char __pyx_k_num_steps[] = "num_steps";
 static const char __pyx_k_pr_arr_in[] = "pr_arr_in";
 static const char __pyx_k_pr_res_in[] = "pr_res_in";
-static const char __pyx_k_pyEOB_cpu[] = "pyEOB_cpu";
 static const char __pyx_k_ell_arr_in[] = "ell_arr_in";
 static const char __pyx_k_phi_arr_in[] = "phi_arr_in";
 static const char __pyx_k_ImportError[] = "ImportError";
@@ -1720,6 +1719,7 @@ static const char __pyx_k_num_add_args[] = "num_add_args";
 static const char __pyx_k_num_steps_in[] = "num_steps_in";
 static const char __pyx_k_start_bounds[] = "start_bounds";
 static const char __pyx_k_ell_arr_in_in[] = "ell_arr_in_in";
+static const char __pyx_k_eob_pyEOB_cpu[] = "eob.pyEOB_cpu";
 static const char __pyx_k_num_steps_max[] = "num_steps_max";
 static const char __pyx_k_root_find_all[] = "root_find_all";
 static const char __pyx_k_additionalArgs[] = "additionalArgs";
@@ -1757,6 +1757,7 @@ static PyObject *__pyx_n_s_cline_in_traceback;
 static PyObject *__pyx_n_s_compute_hlms;
 static PyObject *__pyx_n_s_ell_arr_in;
 static PyObject *__pyx_n_s_ell_arr_in_in;
+static PyObject *__pyx_n_s_eob_pyEOB_cpu;
 static PyObject *__pyx_n_s_err;
 static PyObject *__pyx_n_s_hlms;
 static PyObject *__pyx_n_s_hlms_in;
@@ -1793,7 +1794,6 @@ static PyObject *__pyx_n_s_pr_arr;
 static PyObject *__pyx_n_s_pr_arr_in;
 static PyObject *__pyx_n_s_pr_res;
 static PyObject *__pyx_n_s_pr_res_in;
-static PyObject *__pyx_n_s_pyEOB_cpu;
 static PyObject *__pyx_n_s_r_arr;
 static PyObject *__pyx_n_s_r_arr_in;
 static PyObject *__pyx_n_s_root_find_all;
@@ -1808,11 +1808,11 @@ static PyObject *__pyx_n_s_x0In_in;
 static PyObject *__pyx_n_s_xOut;
 static PyObject *__pyx_n_s_xOut_in;
 static PyObject *__pyx_n_s_x_in;
-static PyObject *__pyx_pf_9pyEOB_cpu_compute_hlms(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_hlms, PyObject *__pyx_v_r_arr, PyObject *__pyx_v_phi_arr, PyObject *__pyx_v_pr_arr, PyObject *__pyx_v_L_arr, PyObject *__pyx_v_m1_arr, PyObject *__pyx_v_m2_arr, PyObject *__pyx_v_chi1_arr, PyObject *__pyx_v_chi2_arr, PyObject *__pyx_v_num_steps, PyObject *__pyx_v_num_steps_max, PyObject *__pyx_v_ell_arr_in, PyObject *__pyx_v_mm_arr_in, PyObject *__pyx_v_num_modes, PyObject *__pyx_v_num_bin_all); /* proto */
-static PyObject *__pyx_pf_9pyEOB_cpu_2root_find_all(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_xOut, PyObject *__pyx_v_x0In, PyObject *__pyx_v_argsIn, PyObject *__pyx_v_additionalArgsIn, PyObject *__pyx_v_max_iter, PyObject *__pyx_v_err, PyObject *__pyx_v_numBinAll, PyObject *__pyx_v_n, PyObject *__pyx_v_num_args, PyObject *__pyx_v_num_add_args); /* proto */
-static PyObject *__pyx_pf_9pyEOB_cpu_4root_find_scalar_all(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_pr_res, PyObject *__pyx_v_start_bounds, PyObject *__pyx_v_argsIn, PyObject *__pyx_v_additionalArgsIn, PyObject *__pyx_v_max_iter, PyObject *__pyx_v_err, PyObject *__pyx_v_numBinAll, PyObject *__pyx_v_num_args, PyObject *__pyx_v_num_add_args); /* proto */
-static PyObject *__pyx_pf_9pyEOB_cpu_6ODE(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_x, PyObject *__pyx_v_arg, PyObject *__pyx_v_k, PyObject *__pyx_v_additionalArgs, PyObject *__pyx_v_numSys); /* proto */
-static PyObject *__pyx_pf_9pyEOB_cpu_8ODE_Ham_align_AD(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_x, PyObject *__pyx_v_arg, PyObject *__pyx_v_k, PyObject *__pyx_v_additionalArgs, PyObject *__pyx_v_numSys); /* proto */
+static PyObject *__pyx_pf_3eob_9pyEOB_cpu_compute_hlms(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_hlms, PyObject *__pyx_v_r_arr, PyObject *__pyx_v_phi_arr, PyObject *__pyx_v_pr_arr, PyObject *__pyx_v_L_arr, PyObject *__pyx_v_m1_arr, PyObject *__pyx_v_m2_arr, PyObject *__pyx_v_chi1_arr, PyObject *__pyx_v_chi2_arr, PyObject *__pyx_v_num_steps, PyObject *__pyx_v_num_steps_max, PyObject *__pyx_v_ell_arr_in, PyObject *__pyx_v_mm_arr_in, PyObject *__pyx_v_num_modes, PyObject *__pyx_v_num_bin_all); /* proto */
+static PyObject *__pyx_pf_3eob_9pyEOB_cpu_2root_find_all(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_xOut, PyObject *__pyx_v_x0In, PyObject *__pyx_v_argsIn, PyObject *__pyx_v_additionalArgsIn, PyObject *__pyx_v_max_iter, PyObject *__pyx_v_err, PyObject *__pyx_v_numBinAll, PyObject *__pyx_v_n, PyObject *__pyx_v_num_args, PyObject *__pyx_v_num_add_args); /* proto */
+static PyObject *__pyx_pf_3eob_9pyEOB_cpu_4root_find_scalar_all(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_pr_res, PyObject *__pyx_v_start_bounds, PyObject *__pyx_v_argsIn, PyObject *__pyx_v_additionalArgsIn, PyObject *__pyx_v_max_iter, PyObject *__pyx_v_err, PyObject *__pyx_v_numBinAll, PyObject *__pyx_v_num_args, PyObject *__pyx_v_num_add_args); /* proto */
+static PyObject *__pyx_pf_3eob_9pyEOB_cpu_6ODE(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_x, PyObject *__pyx_v_arg, PyObject *__pyx_v_k, PyObject *__pyx_v_additionalArgs, PyObject *__pyx_v_numSys); /* proto */
+static PyObject *__pyx_pf_3eob_9pyEOB_cpu_8ODE_Ham_align_AD(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_x, PyObject *__pyx_v_arg, PyObject *__pyx_v_k, PyObject *__pyx_v_additionalArgs, PyObject *__pyx_v_numSys); /* proto */
 static PyObject *__pyx_tuple_;
 static PyObject *__pyx_tuple__2;
 static PyObject *__pyx_tuple__3;
@@ -1836,9 +1836,9 @@ static PyObject *__pyx_codeobj__12;
  */
 
 /* Python wrapper */
-static PyObject *__pyx_pw_9pyEOB_cpu_1compute_hlms(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds); /*proto*/
-static PyMethodDef __pyx_mdef_9pyEOB_cpu_1compute_hlms = {"compute_hlms", (PyCFunction)(void*)(PyCFunctionWithKeywords)__pyx_pw_9pyEOB_cpu_1compute_hlms, METH_VARARGS|METH_KEYWORDS, 0};
-static PyObject *__pyx_pw_9pyEOB_cpu_1compute_hlms(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds) {
+static PyObject *__pyx_pw_3eob_9pyEOB_cpu_1compute_hlms(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds); /*proto*/
+static PyMethodDef __pyx_mdef_3eob_9pyEOB_cpu_1compute_hlms = {"compute_hlms", (PyCFunction)(void*)(PyCFunctionWithKeywords)__pyx_pw_3eob_9pyEOB_cpu_1compute_hlms, METH_VARARGS|METH_KEYWORDS, 0};
+static PyObject *__pyx_pw_3eob_9pyEOB_cpu_1compute_hlms(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds) {
   PyObject *__pyx_v_hlms = 0;
   PyObject *__pyx_v_r_arr = 0;
   PyObject *__pyx_v_phi_arr = 0;
@@ -2032,18 +2032,18 @@ static PyObject *__pyx_pw_9pyEOB_cpu_1compute_hlms(PyObject *__pyx_self, PyObjec
   __pyx_L5_argtuple_error:;
   __Pyx_RaiseArgtupleInvalid("compute_hlms", 1, 15, 15, PyTuple_GET_SIZE(__pyx_args)); __PYX_ERR(0, 20, __pyx_L3_error)
   __pyx_L3_error:;
-  __Pyx_AddTraceback("pyEOB_cpu.compute_hlms", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("eob.pyEOB_cpu.compute_hlms", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
-  __pyx_r = __pyx_pf_9pyEOB_cpu_compute_hlms(__pyx_self, __pyx_v_hlms, __pyx_v_r_arr, __pyx_v_phi_arr, __pyx_v_pr_arr, __pyx_v_L_arr, __pyx_v_m1_arr, __pyx_v_m2_arr, __pyx_v_chi1_arr, __pyx_v_chi2_arr, __pyx_v_num_steps, __pyx_v_num_steps_max, __pyx_v_ell_arr_in, __pyx_v_mm_arr_in, __pyx_v_num_modes, __pyx_v_num_bin_all);
+  __pyx_r = __pyx_pf_3eob_9pyEOB_cpu_compute_hlms(__pyx_self, __pyx_v_hlms, __pyx_v_r_arr, __pyx_v_phi_arr, __pyx_v_pr_arr, __pyx_v_L_arr, __pyx_v_m1_arr, __pyx_v_m2_arr, __pyx_v_chi1_arr, __pyx_v_chi2_arr, __pyx_v_num_steps, __pyx_v_num_steps_max, __pyx_v_ell_arr_in, __pyx_v_mm_arr_in, __pyx_v_num_modes, __pyx_v_num_bin_all);
 
   /* function exit code */
   __Pyx_RefNannyFinishContext();
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_9pyEOB_cpu_compute_hlms(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_hlms, PyObject *__pyx_v_r_arr, PyObject *__pyx_v_phi_arr, PyObject *__pyx_v_pr_arr, PyObject *__pyx_v_L_arr, PyObject *__pyx_v_m1_arr, PyObject *__pyx_v_m2_arr, PyObject *__pyx_v_chi1_arr, PyObject *__pyx_v_chi2_arr, PyObject *__pyx_v_num_steps, PyObject *__pyx_v_num_steps_max, PyObject *__pyx_v_ell_arr_in, PyObject *__pyx_v_mm_arr_in, PyObject *__pyx_v_num_modes, PyObject *__pyx_v_num_bin_all) {
+static PyObject *__pyx_pf_3eob_9pyEOB_cpu_compute_hlms(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_hlms, PyObject *__pyx_v_r_arr, PyObject *__pyx_v_phi_arr, PyObject *__pyx_v_pr_arr, PyObject *__pyx_v_L_arr, PyObject *__pyx_v_m1_arr, PyObject *__pyx_v_m2_arr, PyObject *__pyx_v_chi1_arr, PyObject *__pyx_v_chi2_arr, PyObject *__pyx_v_num_steps, PyObject *__pyx_v_num_steps_max, PyObject *__pyx_v_ell_arr_in, PyObject *__pyx_v_mm_arr_in, PyObject *__pyx_v_num_modes, PyObject *__pyx_v_num_bin_all) {
   size_t __pyx_v_hlms_in;
   size_t __pyx_v_r_arr_in;
   size_t __pyx_v_phi_arr_in;
@@ -2219,7 +2219,7 @@ static PyObject *__pyx_pf_9pyEOB_cpu_compute_hlms(CYTHON_UNUSED PyObject *__pyx_
   __pyx_r = Py_None; __Pyx_INCREF(Py_None);
   goto __pyx_L0;
   __pyx_L1_error:;
-  __Pyx_AddTraceback("pyEOB_cpu.compute_hlms", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("eob.pyEOB_cpu.compute_hlms", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = NULL;
   __pyx_L0:;
   __Pyx_XGIVEREF(__pyx_r);
@@ -2236,9 +2236,9 @@ static PyObject *__pyx_pf_9pyEOB_cpu_compute_hlms(CYTHON_UNUSED PyObject *__pyx_
  */
 
 /* Python wrapper */
-static PyObject *__pyx_pw_9pyEOB_cpu_3root_find_all(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds); /*proto*/
-static PyMethodDef __pyx_mdef_9pyEOB_cpu_3root_find_all = {"root_find_all", (PyCFunction)(void*)(PyCFunctionWithKeywords)__pyx_pw_9pyEOB_cpu_3root_find_all, METH_VARARGS|METH_KEYWORDS, 0};
-static PyObject *__pyx_pw_9pyEOB_cpu_3root_find_all(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds) {
+static PyObject *__pyx_pw_3eob_9pyEOB_cpu_3root_find_all(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds); /*proto*/
+static PyMethodDef __pyx_mdef_3eob_9pyEOB_cpu_3root_find_all = {"root_find_all", (PyCFunction)(void*)(PyCFunctionWithKeywords)__pyx_pw_3eob_9pyEOB_cpu_3root_find_all, METH_VARARGS|METH_KEYWORDS, 0};
+static PyObject *__pyx_pw_3eob_9pyEOB_cpu_3root_find_all(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds) {
   PyObject *__pyx_v_xOut = 0;
   PyObject *__pyx_v_x0In = 0;
   PyObject *__pyx_v_argsIn = 0;
@@ -2377,18 +2377,18 @@ static PyObject *__pyx_pw_9pyEOB_cpu_3root_find_all(PyObject *__pyx_self, PyObje
   __pyx_L5_argtuple_error:;
   __Pyx_RaiseArgtupleInvalid("root_find_all", 1, 10, 10, PyTuple_GET_SIZE(__pyx_args)); __PYX_ERR(0, 43, __pyx_L3_error)
   __pyx_L3_error:;
-  __Pyx_AddTraceback("pyEOB_cpu.root_find_all", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("eob.pyEOB_cpu.root_find_all", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
-  __pyx_r = __pyx_pf_9pyEOB_cpu_2root_find_all(__pyx_self, __pyx_v_xOut, __pyx_v_x0In, __pyx_v_argsIn, __pyx_v_additionalArgsIn, __pyx_v_max_iter, __pyx_v_err, __pyx_v_numBinAll, __pyx_v_n, __pyx_v_num_args, __pyx_v_num_add_args);
+  __pyx_r = __pyx_pf_3eob_9pyEOB_cpu_2root_find_all(__pyx_self, __pyx_v_xOut, __pyx_v_x0In, __pyx_v_argsIn, __pyx_v_additionalArgsIn, __pyx_v_max_iter, __pyx_v_err, __pyx_v_numBinAll, __pyx_v_n, __pyx_v_num_args, __pyx_v_num_add_args);
 
   /* function exit code */
   __Pyx_RefNannyFinishContext();
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_9pyEOB_cpu_2root_find_all(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_xOut, PyObject *__pyx_v_x0In, PyObject *__pyx_v_argsIn, PyObject *__pyx_v_additionalArgsIn, PyObject *__pyx_v_max_iter, PyObject *__pyx_v_err, PyObject *__pyx_v_numBinAll, PyObject *__pyx_v_n, PyObject *__pyx_v_num_args, PyObject *__pyx_v_num_add_args) {
+static PyObject *__pyx_pf_3eob_9pyEOB_cpu_2root_find_all(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_xOut, PyObject *__pyx_v_x0In, PyObject *__pyx_v_argsIn, PyObject *__pyx_v_additionalArgsIn, PyObject *__pyx_v_max_iter, PyObject *__pyx_v_err, PyObject *__pyx_v_numBinAll, PyObject *__pyx_v_n, PyObject *__pyx_v_num_args, PyObject *__pyx_v_num_add_args) {
   size_t __pyx_v_xOut_in;
   size_t __pyx_v_x0In_in;
   size_t __pyx_v_argsIn_in;
@@ -2474,7 +2474,7 @@ static PyObject *__pyx_pf_9pyEOB_cpu_2root_find_all(CYTHON_UNUSED PyObject *__py
   __pyx_r = Py_None; __Pyx_INCREF(Py_None);
   goto __pyx_L0;
   __pyx_L1_error:;
-  __Pyx_AddTraceback("pyEOB_cpu.root_find_all", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("eob.pyEOB_cpu.root_find_all", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = NULL;
   __pyx_L0:;
   __Pyx_XGIVEREF(__pyx_r);
@@ -2491,9 +2491,9 @@ static PyObject *__pyx_pf_9pyEOB_cpu_2root_find_all(CYTHON_UNUSED PyObject *__py
  */
 
 /* Python wrapper */
-static PyObject *__pyx_pw_9pyEOB_cpu_5root_find_scalar_all(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds); /*proto*/
-static PyMethodDef __pyx_mdef_9pyEOB_cpu_5root_find_scalar_all = {"root_find_scalar_all", (PyCFunction)(void*)(PyCFunctionWithKeywords)__pyx_pw_9pyEOB_cpu_5root_find_scalar_all, METH_VARARGS|METH_KEYWORDS, 0};
-static PyObject *__pyx_pw_9pyEOB_cpu_5root_find_scalar_all(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds) {
+static PyObject *__pyx_pw_3eob_9pyEOB_cpu_5root_find_scalar_all(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds); /*proto*/
+static PyMethodDef __pyx_mdef_3eob_9pyEOB_cpu_5root_find_scalar_all = {"root_find_scalar_all", (PyCFunction)(void*)(PyCFunctionWithKeywords)__pyx_pw_3eob_9pyEOB_cpu_5root_find_scalar_all, METH_VARARGS|METH_KEYWORDS, 0};
+static PyObject *__pyx_pw_3eob_9pyEOB_cpu_5root_find_scalar_all(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds) {
   PyObject *__pyx_v_pr_res = 0;
   PyObject *__pyx_v_start_bounds = 0;
   PyObject *__pyx_v_argsIn = 0;
@@ -2621,18 +2621,18 @@ static PyObject *__pyx_pw_9pyEOB_cpu_5root_find_scalar_all(PyObject *__pyx_self,
   __pyx_L5_argtuple_error:;
   __Pyx_RaiseArgtupleInvalid("root_find_scalar_all", 1, 9, 9, PyTuple_GET_SIZE(__pyx_args)); __PYX_ERR(0, 53, __pyx_L3_error)
   __pyx_L3_error:;
-  __Pyx_AddTraceback("pyEOB_cpu.root_find_scalar_all", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("eob.pyEOB_cpu.root_find_scalar_all", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
-  __pyx_r = __pyx_pf_9pyEOB_cpu_4root_find_scalar_all(__pyx_self, __pyx_v_pr_res, __pyx_v_start_bounds, __pyx_v_argsIn, __pyx_v_additionalArgsIn, __pyx_v_max_iter, __pyx_v_err, __pyx_v_numBinAll, __pyx_v_num_args, __pyx_v_num_add_args);
+  __pyx_r = __pyx_pf_3eob_9pyEOB_cpu_4root_find_scalar_all(__pyx_self, __pyx_v_pr_res, __pyx_v_start_bounds, __pyx_v_argsIn, __pyx_v_additionalArgsIn, __pyx_v_max_iter, __pyx_v_err, __pyx_v_numBinAll, __pyx_v_num_args, __pyx_v_num_add_args);
 
   /* function exit code */
   __Pyx_RefNannyFinishContext();
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_9pyEOB_cpu_4root_find_scalar_all(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_pr_res, PyObject *__pyx_v_start_bounds, PyObject *__pyx_v_argsIn, PyObject *__pyx_v_additionalArgsIn, PyObject *__pyx_v_max_iter, PyObject *__pyx_v_err, PyObject *__pyx_v_numBinAll, PyObject *__pyx_v_num_args, PyObject *__pyx_v_num_add_args) {
+static PyObject *__pyx_pf_3eob_9pyEOB_cpu_4root_find_scalar_all(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_pr_res, PyObject *__pyx_v_start_bounds, PyObject *__pyx_v_argsIn, PyObject *__pyx_v_additionalArgsIn, PyObject *__pyx_v_max_iter, PyObject *__pyx_v_err, PyObject *__pyx_v_numBinAll, PyObject *__pyx_v_num_args, PyObject *__pyx_v_num_add_args) {
   size_t __pyx_v_pr_res_in;
   size_t __pyx_v_start_bounds_in;
   size_t __pyx_v_argsIn_in;
@@ -2716,7 +2716,7 @@ static PyObject *__pyx_pf_9pyEOB_cpu_4root_find_scalar_all(CYTHON_UNUSED PyObjec
   __pyx_r = Py_None; __Pyx_INCREF(Py_None);
   goto __pyx_L0;
   __pyx_L1_error:;
-  __Pyx_AddTraceback("pyEOB_cpu.root_find_scalar_all", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("eob.pyEOB_cpu.root_find_scalar_all", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = NULL;
   __pyx_L0:;
   __Pyx_XGIVEREF(__pyx_r);
@@ -2733,9 +2733,9 @@ static PyObject *__pyx_pf_9pyEOB_cpu_4root_find_scalar_all(CYTHON_UNUSED PyObjec
  */
 
 /* Python wrapper */
-static PyObject *__pyx_pw_9pyEOB_cpu_7ODE(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds); /*proto*/
-static PyMethodDef __pyx_mdef_9pyEOB_cpu_7ODE = {"ODE", (PyCFunction)(void*)(PyCFunctionWithKeywords)__pyx_pw_9pyEOB_cpu_7ODE, METH_VARARGS|METH_KEYWORDS, 0};
-static PyObject *__pyx_pw_9pyEOB_cpu_7ODE(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds) {
+static PyObject *__pyx_pw_3eob_9pyEOB_cpu_7ODE(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds); /*proto*/
+static PyMethodDef __pyx_mdef_3eob_9pyEOB_cpu_7ODE = {"ODE", (PyCFunction)(void*)(PyCFunctionWithKeywords)__pyx_pw_3eob_9pyEOB_cpu_7ODE, METH_VARARGS|METH_KEYWORDS, 0};
+static PyObject *__pyx_pw_3eob_9pyEOB_cpu_7ODE(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds) {
   PyObject *__pyx_v_x = 0;
   PyObject *__pyx_v_arg = 0;
   PyObject *__pyx_v_k = 0;
@@ -2819,18 +2819,18 @@ static PyObject *__pyx_pw_9pyEOB_cpu_7ODE(PyObject *__pyx_self, PyObject *__pyx_
   __pyx_L5_argtuple_error:;
   __Pyx_RaiseArgtupleInvalid("ODE", 1, 5, 5, PyTuple_GET_SIZE(__pyx_args)); __PYX_ERR(0, 63, __pyx_L3_error)
   __pyx_L3_error:;
-  __Pyx_AddTraceback("pyEOB_cpu.ODE", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("eob.pyEOB_cpu.ODE", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
-  __pyx_r = __pyx_pf_9pyEOB_cpu_6ODE(__pyx_self, __pyx_v_x, __pyx_v_arg, __pyx_v_k, __pyx_v_additionalArgs, __pyx_v_numSys);
+  __pyx_r = __pyx_pf_3eob_9pyEOB_cpu_6ODE(__pyx_self, __pyx_v_x, __pyx_v_arg, __pyx_v_k, __pyx_v_additionalArgs, __pyx_v_numSys);
 
   /* function exit code */
   __Pyx_RefNannyFinishContext();
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_9pyEOB_cpu_6ODE(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_x, PyObject *__pyx_v_arg, PyObject *__pyx_v_k, PyObject *__pyx_v_additionalArgs, PyObject *__pyx_v_numSys) {
+static PyObject *__pyx_pf_3eob_9pyEOB_cpu_6ODE(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_x, PyObject *__pyx_v_arg, PyObject *__pyx_v_k, PyObject *__pyx_v_additionalArgs, PyObject *__pyx_v_numSys) {
   size_t __pyx_v_x_in;
   size_t __pyx_v_arg_in;
   size_t __pyx_v_k_in;
@@ -2906,7 +2906,7 @@ static PyObject *__pyx_pf_9pyEOB_cpu_6ODE(CYTHON_UNUSED PyObject *__pyx_self, Py
   __pyx_r = Py_None; __Pyx_INCREF(Py_None);
   goto __pyx_L0;
   __pyx_L1_error:;
-  __Pyx_AddTraceback("pyEOB_cpu.ODE", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("eob.pyEOB_cpu.ODE", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = NULL;
   __pyx_L0:;
   __Pyx_XGIVEREF(__pyx_r);
@@ -2923,9 +2923,9 @@ static PyObject *__pyx_pf_9pyEOB_cpu_6ODE(CYTHON_UNUSED PyObject *__pyx_self, Py
  */
 
 /* Python wrapper */
-static PyObject *__pyx_pw_9pyEOB_cpu_9ODE_Ham_align_AD(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds); /*proto*/
-static PyMethodDef __pyx_mdef_9pyEOB_cpu_9ODE_Ham_align_AD = {"ODE_Ham_align_AD", (PyCFunction)(void*)(PyCFunctionWithKeywords)__pyx_pw_9pyEOB_cpu_9ODE_Ham_align_AD, METH_VARARGS|METH_KEYWORDS, 0};
-static PyObject *__pyx_pw_9pyEOB_cpu_9ODE_Ham_align_AD(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds) {
+static PyObject *__pyx_pw_3eob_9pyEOB_cpu_9ODE_Ham_align_AD(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds); /*proto*/
+static PyMethodDef __pyx_mdef_3eob_9pyEOB_cpu_9ODE_Ham_align_AD = {"ODE_Ham_align_AD", (PyCFunction)(void*)(PyCFunctionWithKeywords)__pyx_pw_3eob_9pyEOB_cpu_9ODE_Ham_align_AD, METH_VARARGS|METH_KEYWORDS, 0};
+static PyObject *__pyx_pw_3eob_9pyEOB_cpu_9ODE_Ham_align_AD(PyObject *__pyx_self, PyObject *__pyx_args, PyObject *__pyx_kwds) {
   PyObject *__pyx_v_x = 0;
   PyObject *__pyx_v_arg = 0;
   PyObject *__pyx_v_k = 0;
@@ -3009,18 +3009,18 @@ static PyObject *__pyx_pw_9pyEOB_cpu_9ODE_Ham_align_AD(PyObject *__pyx_self, PyO
   __pyx_L5_argtuple_error:;
   __Pyx_RaiseArgtupleInvalid("ODE_Ham_align_AD", 1, 5, 5, PyTuple_GET_SIZE(__pyx_args)); __PYX_ERR(0, 73, __pyx_L3_error)
   __pyx_L3_error:;
-  __Pyx_AddTraceback("pyEOB_cpu.ODE_Ham_align_AD", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("eob.pyEOB_cpu.ODE_Ham_align_AD", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __Pyx_RefNannyFinishContext();
   return NULL;
   __pyx_L4_argument_unpacking_done:;
-  __pyx_r = __pyx_pf_9pyEOB_cpu_8ODE_Ham_align_AD(__pyx_self, __pyx_v_x, __pyx_v_arg, __pyx_v_k, __pyx_v_additionalArgs, __pyx_v_numSys);
+  __pyx_r = __pyx_pf_3eob_9pyEOB_cpu_8ODE_Ham_align_AD(__pyx_self, __pyx_v_x, __pyx_v_arg, __pyx_v_k, __pyx_v_additionalArgs, __pyx_v_numSys);
 
   /* function exit code */
   __Pyx_RefNannyFinishContext();
   return __pyx_r;
 }
 
-static PyObject *__pyx_pf_9pyEOB_cpu_8ODE_Ham_align_AD(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_x, PyObject *__pyx_v_arg, PyObject *__pyx_v_k, PyObject *__pyx_v_additionalArgs, PyObject *__pyx_v_numSys) {
+static PyObject *__pyx_pf_3eob_9pyEOB_cpu_8ODE_Ham_align_AD(CYTHON_UNUSED PyObject *__pyx_self, PyObject *__pyx_v_x, PyObject *__pyx_v_arg, PyObject *__pyx_v_k, PyObject *__pyx_v_additionalArgs, PyObject *__pyx_v_numSys) {
   size_t __pyx_v_x_in;
   size_t __pyx_v_arg_in;
   size_t __pyx_v_k_in;
@@ -3095,7 +3095,7 @@ static PyObject *__pyx_pf_9pyEOB_cpu_8ODE_Ham_align_AD(CYTHON_UNUSED PyObject *_
   __pyx_r = Py_None; __Pyx_INCREF(Py_None);
   goto __pyx_L0;
   __pyx_L1_error:;
-  __Pyx_AddTraceback("pyEOB_cpu.ODE_Ham_align_AD", __pyx_clineno, __pyx_lineno, __pyx_filename);
+  __Pyx_AddTraceback("eob.pyEOB_cpu.ODE_Ham_align_AD", __pyx_clineno, __pyx_lineno, __pyx_filename);
   __pyx_r = NULL;
   __pyx_L0:;
   __Pyx_XGIVEREF(__pyx_r);
@@ -4188,6 +4188,7 @@ static __Pyx_StringTabEntry __pyx_string_tab[] = {
   {&__pyx_n_s_compute_hlms, __pyx_k_compute_hlms, sizeof(__pyx_k_compute_hlms), 0, 0, 1, 1},
   {&__pyx_n_s_ell_arr_in, __pyx_k_ell_arr_in, sizeof(__pyx_k_ell_arr_in), 0, 0, 1, 1},
   {&__pyx_n_s_ell_arr_in_in, __pyx_k_ell_arr_in_in, sizeof(__pyx_k_ell_arr_in_in), 0, 0, 1, 1},
+  {&__pyx_n_s_eob_pyEOB_cpu, __pyx_k_eob_pyEOB_cpu, sizeof(__pyx_k_eob_pyEOB_cpu), 0, 0, 1, 1},
   {&__pyx_n_s_err, __pyx_k_err, sizeof(__pyx_k_err), 0, 0, 1, 1},
   {&__pyx_n_s_hlms, __pyx_k_hlms, sizeof(__pyx_k_hlms), 0, 0, 1, 1},
   {&__pyx_n_s_hlms_in, __pyx_k_hlms_in, sizeof(__pyx_k_hlms_in), 0, 0, 1, 1},
@@ -4224,7 +4225,6 @@ static __Pyx_StringTabEntry __pyx_string_tab[] = {
   {&__pyx_n_s_pr_arr_in, __pyx_k_pr_arr_in, sizeof(__pyx_k_pr_arr_in), 0, 0, 1, 1},
   {&__pyx_n_s_pr_res, __pyx_k_pr_res, sizeof(__pyx_k_pr_res), 0, 0, 1, 1},
   {&__pyx_n_s_pr_res_in, __pyx_k_pr_res_in, sizeof(__pyx_k_pr_res_in), 0, 0, 1, 1},
-  {&__pyx_n_s_pyEOB_cpu, __pyx_k_pyEOB_cpu, sizeof(__pyx_k_pyEOB_cpu), 0, 0, 1, 1},
   {&__pyx_n_s_r_arr, __pyx_k_r_arr, sizeof(__pyx_k_r_arr), 0, 0, 1, 1},
   {&__pyx_n_s_r_arr_in, __pyx_k_r_arr_in, sizeof(__pyx_k_r_arr_in), 0, 0, 1, 1},
   {&__pyx_n_s_root_find_all, __pyx_k_root_find_all, sizeof(__pyx_k_root_find_all), 0, 0, 1, 1},
@@ -4637,14 +4637,14 @@ if (!__Pyx_RefNanny) {
   #if PY_MAJOR_VERSION < 3 && (__PYX_DEFAULT_STRING_ENCODING_IS_ASCII || __PYX_DEFAULT_STRING_ENCODING_IS_DEFAULT)
   if (__Pyx_init_sys_getdefaultencoding_params() < 0) __PYX_ERR(0, 1, __pyx_L1_error)
   #endif
-  if (__pyx_module_is_main_pyEOB_cpu) {
+  if (__pyx_module_is_main_eob__pyEOB_cpu) {
     if (PyObject_SetAttr(__pyx_m, __pyx_n_s_name, __pyx_n_s_main) < 0) __PYX_ERR(0, 1, __pyx_L1_error)
   }
   #if PY_MAJOR_VERSION >= 3
   {
     PyObject *modules = PyImport_GetModuleDict(); if (unlikely(!modules)) __PYX_ERR(0, 1, __pyx_L1_error)
-    if (!PyDict_GetItemString(modules, "pyEOB_cpu")) {
-      if (unlikely(PyDict_SetItemString(modules, "pyEOB_cpu", __pyx_m) < 0)) __PYX_ERR(0, 1, __pyx_L1_error)
+    if (!PyDict_GetItemString(modules, "eob.pyEOB_cpu")) {
+      if (unlikely(PyDict_SetItemString(modules, "eob.pyEOB_cpu", __pyx_m) < 0)) __PYX_ERR(0, 1, __pyx_L1_error)
     }
   }
   #endif
@@ -4729,7 +4729,7 @@ if (!__Pyx_RefNanny) {
  *               m1_arr, m2_arr, chi1_arr, chi2_arr,
  *               num_steps, num_steps_max, ell_arr_in, mm_arr_in, num_modes, num_bin_all):
  */
-  __pyx_t_1 = PyCFunction_NewEx(&__pyx_mdef_9pyEOB_cpu_1compute_hlms, NULL, __pyx_n_s_pyEOB_cpu); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 20, __pyx_L1_error)
+  __pyx_t_1 = PyCFunction_NewEx(&__pyx_mdef_3eob_9pyEOB_cpu_1compute_hlms, NULL, __pyx_n_s_eob_pyEOB_cpu); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 20, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
 
   /* "src/eob_cpu.pyx":19
@@ -4763,7 +4763,7 @@ if (!__Pyx_RefNanny) {
  * 
  *     cdef size_t xOut_in = xOut
  */
-  __pyx_t_1 = PyCFunction_NewEx(&__pyx_mdef_9pyEOB_cpu_3root_find_all, NULL, __pyx_n_s_pyEOB_cpu); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 43, __pyx_L1_error)
+  __pyx_t_1 = PyCFunction_NewEx(&__pyx_mdef_3eob_9pyEOB_cpu_3root_find_all, NULL, __pyx_n_s_eob_pyEOB_cpu); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 43, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
 
   /* "src/eob_cpu.pyx":42
@@ -4797,7 +4797,7 @@ if (!__Pyx_RefNanny) {
  * 
  *     cdef size_t pr_res_in = pr_res
  */
-  __pyx_t_1 = PyCFunction_NewEx(&__pyx_mdef_9pyEOB_cpu_5root_find_scalar_all, NULL, __pyx_n_s_pyEOB_cpu); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 53, __pyx_L1_error)
+  __pyx_t_1 = PyCFunction_NewEx(&__pyx_mdef_3eob_9pyEOB_cpu_5root_find_scalar_all, NULL, __pyx_n_s_eob_pyEOB_cpu); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 53, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
 
   /* "src/eob_cpu.pyx":52
@@ -4831,7 +4831,7 @@ if (!__Pyx_RefNanny) {
  * 
  *     cdef size_t x_in = x
  */
-  __pyx_t_1 = PyCFunction_NewEx(&__pyx_mdef_9pyEOB_cpu_7ODE, NULL, __pyx_n_s_pyEOB_cpu); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 63, __pyx_L1_error)
+  __pyx_t_1 = PyCFunction_NewEx(&__pyx_mdef_3eob_9pyEOB_cpu_7ODE, NULL, __pyx_n_s_eob_pyEOB_cpu); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 63, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
 
   /* "src/eob_cpu.pyx":62
@@ -4865,7 +4865,7 @@ if (!__Pyx_RefNanny) {
  * 
  *     cdef size_t x_in = x
  */
-  __pyx_t_1 = PyCFunction_NewEx(&__pyx_mdef_9pyEOB_cpu_9ODE_Ham_align_AD, NULL, __pyx_n_s_pyEOB_cpu); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 73, __pyx_L1_error)
+  __pyx_t_1 = PyCFunction_NewEx(&__pyx_mdef_3eob_9pyEOB_cpu_9ODE_Ham_align_AD, NULL, __pyx_n_s_eob_pyEOB_cpu); if (unlikely(!__pyx_t_1)) __PYX_ERR(0, 73, __pyx_L1_error)
   __Pyx_GOTREF(__pyx_t_1);
 
   /* "src/eob_cpu.pyx":72
@@ -4909,11 +4909,11 @@ if (!__Pyx_RefNanny) {
   __Pyx_XDECREF(__pyx_t_3);
   if (__pyx_m) {
     if (__pyx_d) {
-      __Pyx_AddTraceback("init pyEOB_cpu", __pyx_clineno, __pyx_lineno, __pyx_filename);
+      __Pyx_AddTraceback("init eob.pyEOB_cpu", __pyx_clineno, __pyx_lineno, __pyx_filename);
     }
     Py_CLEAR(__pyx_m);
   } else if (!PyErr_Occurred()) {
-    PyErr_SetString(PyExc_ImportError, "init pyEOB_cpu");
+    PyErr_SetString(PyExc_ImportError, "init eob.pyEOB_cpu");
   }
   __pyx_L0:;
   __Pyx_RefNannyFinishContext();

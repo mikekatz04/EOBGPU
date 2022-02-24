@@ -251,16 +251,22 @@ if run_cuda_install:
     )
 
     pyEOB_ext = Extension(
-        "pyEOB",
+        "eob.pyEOB",
         sources=["src/EOB.cu", "src/eob.pyx"],
+        **gpu_extension,
+    )
+
+    pyinterp_ext = Extension(
+        "eob.pytdinterp",
+        sources=["src/interpolate.cu", "src/tdinterp.pyx"],
         **gpu_extension,
     )
 
     # gpu_extensions.append(Extension(extension_name, **temp_dict))
 fps_cu_to_cpp = [
-    "EOB",
+    "EOB", "interpolate"
 ]
-fps_pyx = ["eob"]
+fps_pyx = ["eob", "tdinterp"]
 
 for fp in fps_cu_to_cpp:
     shutil.copy("src/" + fp + ".cu", "src/" + fp + ".cpp")
@@ -280,18 +286,26 @@ cpu_extension = dict(
 )
 
 pyEOB_cpu_ext = Extension(
-    "pyEOB_cpu",
+    "eob.pyEOB_cpu",
     sources=["src/EOB.cpp", "src/eob_cpu.pyx"],
     **cpu_extension,
 )
 
+pyinterp_cpu_ext = Extension(
+        "eob.pytdinterp_cpu",
+        sources=["src/interpolate.cpp", "src/tdinterp_cpu.pyx"],
+        **cpu_extension,
+    )
+
 extensions = [
     pyEOB_cpu_ext,
+    pyinterp_cpu_ext
 ]
 
 if run_cuda_install:
     extensions = [
         pyEOB_ext,
+        pyinterp_ext
     ] + extensions
 
 setup(

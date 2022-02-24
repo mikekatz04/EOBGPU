@@ -618,8 +618,7 @@ class DOPR853:
             
             if self.xp.all(~individual_loop_flag):
                 loopFlag = False
-
-            ii += 1
+                
             #if ii % 1 == 0:
                 #et = time.perf_counter()
                 #print((et - st)/ ii)
