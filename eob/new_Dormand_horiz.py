@@ -2,6 +2,9 @@ import numpy as np
 
 try:
     import cupy as xp
+    from .pydopr853 import dormandPrinceSteps as dormandPrinceSteps_gpu
+    from .pydopr853 import error as error_gpu
+    from .pydopr853 import controllerSuccess as controllerSuccess_gpu
     gpu_available = True
     from cupy.cuda.runtime import setDevice
     setDevice(2)
@@ -9,6 +12,10 @@ try:
 except ModuleNotFoundError:
     import numpy as xp
     gpu_available = False
+
+from .pydopr853_cpu import dormandPrinceSteps as dormandPrinceSteps_cpu
+from .pydopr853_cpu import error as error_cpu
+from .pydopr853_cpu import controllerSuccess as controllerSuccess_cpu
 
 import matplotlib.pyplot as plt
 
@@ -220,8 +227,15 @@ class DOPR853:
 
         if use_gpu:
             self.xp = xp
+            self.dormandPrinceSteps2 = dormandPrinceSteps_gpu
+            self.error2 = error_gpu
+            self.controllerSuccess2 = controllerSuccess_gpu
+
         else:
             self.xp = np
+            self.dormandPrinceSteps2 = dormandPrinceSteps_cpu
+            self.error2 = error_cpu
+            self.controllerSuccess2 = controllerSuccess_cpu
 
         if read_out_to_cpu:
             self.xp_read_out = np
@@ -250,6 +264,10 @@ class DOPR853:
         # Step 1
         arg = solOld.copy()
         xCurrent = x.copy()
+
+
+
+        breakpoint()
 
         self.ode(xCurrent, arg, k1, additionalArgs)
 
@@ -466,8 +484,7 @@ class DOPR853:
         # Check if the previous step was rejected
         CUDA_SHARED bool previousReject[BLOCK]
         """
-
-
+        
         solOld = self.xp.asarray(condBound)  # boundary conditions
         nODE, numSys = solOld.shape
 
@@ -537,32 +554,108 @@ class DOPR853:
 
         step_num = self.xp.zeros(numSys, dtype=int)
         individual_loop_flag = self.xp.ones_like(step_num, dtype=bool)
-        ii = 0
-        #import time
 
-        #st = time.perf_counter()
+    
         
+        ii = 0
+        jj = 0
+       
         while (loopFlag):
 
             xTemp = x[individual_loop_flag]
             hTemp = h[individual_loop_flag]
             #xOldTemp = self.xp.zeros_like(xTemp)
             hOldTemp = self.xp.zeros_like(hTemp)
-            solOldTemp = solOld[:, individual_loop_flag]
-            solNewTemp = solNew[:, individual_loop_flag]
+            solOldTemp = solOld[:, individual_loop_flag].flatten()
+            solNewTemp = solNew[:, individual_loop_flag].flatten()
             errOldTemp = errOld[individual_loop_flag]
             previousRejectTemp = previousReject[individual_loop_flag]
-            additionalArgsTemp = additionalArgs[:, individual_loop_flag]
+            additionalArgsTemp = additionalArgs[:, individual_loop_flag].flatten()
 
             numSysTemp = xTemp.shape[0]
-            ks = [self.xp.zeros((nODE, numSysTemp)) for _ in range(10)]
+            (
+                k1,
+                k2,
+                k3,
+                k4,
+                k5,
+                k6,
+                k7,
+                k8,
+                k9,
+                k10,
+            ) = [self.xp.zeros((nODE, numSysTemp)).flatten() for _ in range(10)]
             err = self.xp.zeros(numSysTemp)
             flagSuccess = self.xp.zeros(numSysTemp, dtype=bool)
         #0.000857
             
+            xCurrent_buffer = self.xp.zeros_like(xTemp)
+            arg_buffer = self.xp.zeros_like(solOldTemp)
+            ak_term_buffer = self.xp.zeros_like(solOldTemp)
+            err = self.xp.zeros_like(xTemp)
+
+            nargs = nODE
+            numEq = numSys
+            num_add_args = additionalArgs.shape[0]
             # Compute the steps to iterate to the next timestep
-            
+           
+            self.dormandPrinceSteps2(
+                xTemp,
+                xCurrent_buffer,
+                solOldTemp,
+                hTemp,
+                arg_buffer,
+                additionalArgs,
+                k1,
+                k2,
+                k3,
+                k4,
+                k5,
+                k6,
+                k7,
+                k8,
+                k9,
+                k10,
+                ak_term_buffer,
+                nargs, 
+                numEq,
+                num_add_args
+            )
+
+            self.error2(
+                err,
+                solOldTemp,
+                solNewTemp,
+                hTemp,
+                k1,
+                k2,
+                k3,
+                k6,
+                k7,
+                k8,
+                k9,
+                k10,
+                numEq,
+                nargs
+            )
+
+            hOldTemp[:] = hTemp
+            #xOldTemp[:] = xTemp
+
+            self.controllerSuccess2(
+                flagSuccess,
+                err,
+                errOldTemp,
+                previousRejectTemp,
+                hTemp,
+                xTemp,
+                numEq,
+                nargs
+            )
+
+            """
             self.dormandPrinceSteps(xTemp, solOldTemp, hTemp, additionalArgsTemp, *ks)
+
 
         # 0.00344 (~0.00258)
             # TODO: improve
@@ -571,17 +664,17 @@ class DOPR853:
             # Compute the error
             self.error(err, solOldTemp, solNewTemp, hTemp, *ks_error)
         # 0.00427 (0.000808)
-        
+            
             # Store the old values
-            hOldTemp[:] = hTemp
-            #xOldTemp[:] = xTemp
+            
 
             # # Check if the error was acceptable
             self.controllerSuccess(flagSuccess, err, errOldTemp, previousRejectTemp, hTemp, xTemp)
 
         # 0.00648 (0.00221)
-            
-            solOldTemp[:, flagSuccess] = solNewTemp[:, flagSuccess]
+            """
+            solOldTemp = solOldTemp.reshape(nODE, numSysTemp)
+            solOldTemp[:, flagSuccess] = solNewTemp.reshape(nODE, numSysTemp)[:, flagSuccess]
 
             xTemp[flagSuccess] = xTemp[flagSuccess] + hOldTemp[flagSuccess]
 
@@ -615,27 +708,30 @@ class DOPR853:
                 stop = self.xp.ones_like(x, dtype=bool)
             
             individual_loop_flag[(x >= self.tmax) | (step_num >= self.max_step - 1) | stop] = False  #  | (solNew[0] < 6.0)] = False
-            
+            self.xp.cuda.runtime.deviceSynchronize()
             if self.xp.all(~individual_loop_flag):
                 loopFlag = False
-                
+
+            jj += 1
+            
+            #if jj >= 281:
+            #    break
             #if ii % 1 == 0:
                 #et = time.perf_counter()
                 #print((et - st)/ ii)
                 #print(ii)
             # 0.008480359460227191 (0.0.00077)
-            
 
         return (denseOutputLoc, denseOutput, step_num) # denseDerivOutput
 
 
 def stopping_criterion(step_num, denseOutput):
         
-        stop = self.xp.zeros_like(step_num, dtype=bool)
+        stop = xp.zeros_like(step_num, dtype=bool)
         num_diff = 10
         for i, step in enumerate(step_num):
             if step > num_diff:
-                if self.xp.all( self.xp.abs(denseOutput[step - num_diff : step, :, i]/ self.xp.abs(denseOutput[:, :, i]).max(axis=0)) < 1e-3):
+                if xp.all( xp.abs(denseOutput[step - num_diff : step, :, i]/ xp.abs(denseOutput[:, :, i]).max(axis=0)) < 1e-3):
                     stop[i] = True
         return stop
 """

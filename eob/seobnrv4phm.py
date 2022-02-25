@@ -394,10 +394,10 @@ class ODEWrapper:
     def __init__(self, use_gpu=False):
         if use_gpu:
             self.xp = xp
-            self.ode = ODE_Ham_align_AD_gpu  # ODE_gpu
+            self.ode = ODE_gpu
         else:
             self.xp = np
-            self.ode = ODE_Ham_align_AD_cpu  # ODE_cpu
+            self.ode = ODE_cpu
         self.count = 0
 
     def __call__(self, x, args, k, additionalArgs):
@@ -580,9 +580,9 @@ class SEOBNRv4PHM:
         # TODO: make adjustable
         # TODO: debug dopr?
         t, traj, num_steps = self.integrator.integrate(
-                condBound.copy(), argsData.copy()
-            )
-
+                    condBound.copy(), argsData.copy()
+                )
+            
         num_steps = num_steps.astype(np.int32)
         
         num_steps_max = num_steps.max().item()

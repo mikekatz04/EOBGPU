@@ -261,12 +261,17 @@ if run_cuda_install:
         sources=["src/interpolate.cu", "src/tdinterp.pyx"],
         **gpu_extension,
     )
+    pydopr_ext = Extension(
+        "eob.pydopr853",
+        sources=["src/EOB.cu", "src/DOPR853.cu", "src/dopr853.pyx"],
+        **gpu_extension,
+    )
 
     # gpu_extensions.append(Extension(extension_name, **temp_dict))
 fps_cu_to_cpp = [
-    "EOB", "interpolate"
+    "EOB", "interpolate", "DOPR853"
 ]
-fps_pyx = ["eob", "tdinterp"]
+fps_pyx = ["eob", "tdinterp", "dopr853"]
 
 for fp in fps_cu_to_cpp:
     shutil.copy("src/" + fp + ".cu", "src/" + fp + ".cpp")
@@ -296,17 +301,24 @@ pyinterp_cpu_ext = Extension(
         sources=["src/interpolate.cpp", "src/tdinterp_cpu.pyx"],
         **cpu_extension,
     )
+pydopr_cpu_ext = Extension(
+        "eob.pydopr853_cpu",
+        sources=["src/EOB.cpp", "src/DOPR853.cpp", "src/dopr853_cpu.pyx"],
+        **cpu_extension,
+    )
 
 extensions = [
     pyEOB_cpu_ext,
-    pyinterp_cpu_ext
+    pyinterp_cpu_ext,
+    pydopr_cpu_ext
 ]
 
 if run_cuda_install:
     extensions = [
         pyEOB_ext,
-        pyinterp_ext
-    ] + extensions
+        pyinterp_ext,
+        pydopr_ext
+    ] #+ extensions
 
 setup(
     name="eobgpu",
