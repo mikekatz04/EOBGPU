@@ -1,5 +1,15 @@
+from .pytdinterp_cpu import interpolate_TD_wrap as interpolate_TD_wrap_cpu
+from .pytdinterp_cpu import TDInterp_wrap2 as TDInterp_wrap_cpu
+from .pyEOB_cpu import ODE_Ham_align_AD as ODE_Ham_align_AD_cpu
+from .pyEOB_cpu import ODE as ODE_cpu
+from .pyEOB_cpu import root_find_scalar_all as root_find_scalar_all_cpu
+from .pyEOB_cpu import root_find_all as root_find_all_cpu
+from .pyEOB_cpu import compute_hlms as compute_hlms_cpu
 import numpy as np
 from bbhx.utils.constants import *
+
+from bilby.gw.utils import greenwich_mean_sidereal_time
+from bilby.core.utils import speed_of_light
 
 import sys
 
@@ -16,6 +26,7 @@ try:
     from .pyEOB import ODE_Ham_align_AD as ODE_Ham_align_AD_gpu
     from .pytdinterp import TDInterp_wrap2 as TDInterp_wrap_gpu
     from .pytdinterp import interpolate_TD_wrap as interpolate_TD_wrap_gpu
+    from .pytdinterp import all_in_one_likelihood as all_in_one_likelihood_gpu
     gpu_available = True
     from cupy.cuda.runtime import setDevice
     setDevice(6)
@@ -29,30 +40,27 @@ sys.path.append(
     "/Users/michaelkatz/Research/EOBGPU/eob_development/toys/hamiltonian_prototype/"
 )
 
-sys.path.append("/home/mlk667/EOBGPU/eob_development/toys/hamiltonian_prototype/")
+sys.path.append(
+    "/home/mlk667/EOBGPU/eob_development/toys/hamiltonian_prototype/")
 
-from .pyEOB_cpu import compute_hlms as compute_hlms_cpu
-from .pyEOB_cpu import root_find_all as root_find_all_cpu
-from .pyEOB_cpu import root_find_scalar_all as root_find_scalar_all_cpu
-from .pyEOB_cpu import ODE as ODE_cpu
-from .pyEOB_cpu import ODE_Ham_align_AD as ODE_Ham_align_AD_cpu
-from .pytdinterp_cpu import TDInterp_wrap2 as TDInterp_wrap_cpu
-from .pytdinterp_cpu import interpolate_TD_wrap as interpolate_TD_wrap_cpu
 
 #from HTMalign_AC import HTMalign_AC
 #from RR_force_aligned import RR_force_2PN
 #from initial_conditions_aligned import computeIC
 
+
 class StoppingCriterion:
     def __init__(self, use_gpu=False, read_out_to_cpu=False):
-        self.use_gpu = use_gpu 
+        self.use_gpu = use_gpu
         self.read_out_to_cpu = read_out_to_cpu
 
     def __call__(self, step_num, denseOutput):
         if self.use_gpu and self.read_out_to_cpu:
-            stop = denseOutput[(step_num.get(), np.zeros_like(step_num.get()), np.arange(len(step_num)))] < 6.0
+            stop = denseOutput[(step_num.get(), np.zeros_like(
+                step_num.get()), np.arange(len(step_num)))] < 6.0
         else:
-            stop = denseOutput[(step_num, np.zeros_like(step_num), np.arange(len(step_num)))] < 3.0
+            stop = denseOutput[(step_num, np.zeros_like(
+                step_num), np.arange(len(step_num)))] < 3.0
         return stop
 
 
@@ -131,7 +139,6 @@ class CubicSplineInterpolantTD:
         return [self.x, self.y, self.c1, self.c2, self.c3]
 
 
-
 class TDInterp:
     def __init__(self, max_init_len=-1, use_gpu=False):
 
@@ -152,14 +159,14 @@ class TDInterp:
 
     def _initialize_template_container(self):
         self.template_carrier = self.xp.zeros(
-            (self.num_bin_all * self.nChannels * self.data_length),
+            (self.num_bin_all * self.data_length),
             dtype=self.xp.complex128,
         )
 
     @property
     def template_channels(self):
         return [
-            self.template_carrier[i].reshape(self.nChannels, self.data_length)
+            self.template_carrier[i].reshape(self.data_length)
             for i in range(self.num_bin_all)
         ]
 
@@ -167,46 +174,27 @@ class TDInterp:
         self,
         dataTime,
         interp_container,
-        lam,
-        beta,
-        psi,
         length,
         data_length,
         num_modes,
-        nChannels,
         ls,
         ms,
+        numBinAll,
         dt=1 / 1024,
     ):
 
-        numBinAll = len(lam)
         self.length = length
         self.num_modes = num_modes
         self.num_bin_all = numBinAll
         self.data_length = data_length
-        self.nChannels = nChannels
-
-        # TODO: fix this
-        theta = self.xp.repeat(self.xp.asarray(beta.copy()), nChannels)
-        phi = self.xp.repeat(self.xp.asarray(lam.copy()), nChannels)
-        psi = self.xp.repeat(self.xp.asarray(psi.copy()), nChannels)
-        term1 = (
-            (1.0 / 2.0)
-            * (1 + self.xp.cos(theta) ** 2)
-            * self.xp.cos(2 * psi)
-            * self.xp.cos(2 * phi)
-        )
-        term2 = self.xp.cos(theta) * self.xp.sin(2 * psi) * self.xp.sin(2 * phi)
-        Fplus = term1 - term2
-        Fcross = term1 + term2
 
         # self._initialize_template_container()
-
         # (ts, y, c1, c2, c3) = interp_container
         splines_ts = interp_container.t_shaped
 
         ends = self.xp.max(splines_ts, axis=1)
-        start_and_end = self.xp.asarray([self.xp.full(self.num_bin_all, 0.0), ends,]).T
+        start_and_end = self.xp.asarray(
+            [self.xp.full(self.num_bin_all, 0.0), ends, ]).T
 
         inds_start_and_end = self.xp.asarray(
             [
@@ -218,7 +206,8 @@ class TDInterp:
         self.lengths = inds_start_and_end[:, 1].astype(self.xp.int32)
         max_length = self.lengths.max().item()
 
-        inds = self.xp.empty((self.num_bin_all * max_length), dtype=self.xp.int32)
+        inds = self.xp.empty(
+            (self.num_bin_all * max_length), dtype=self.xp.int32)
 
         old_lengths = interp_container.lengths
         old_length = self.xp.max(old_lengths).item()
@@ -226,7 +215,7 @@ class TDInterp:
         for i, ((st, et), ts, current_old_length) in enumerate(
             zip(inds_start_and_end, splines_ts, old_lengths)
         ):
-            inds[i * max_length + st : i * max_length + et] = (
+            inds[i * max_length + st: i * max_length + et] = (
                 self.xp.searchsorted(ts, dataTime[st:et], side="right").astype(
                     self.xp.int32
                 )
@@ -234,7 +223,7 @@ class TDInterp:
             )
 
         self.template_carrier = self.xp.zeros(
-            int(self.nChannels * data_length * self.num_bin_all),
+            int(data_length * self.num_bin_all),
             dtype=self.xp.complex128,
         )
 
@@ -249,8 +238,6 @@ class TDInterp:
             interp_container.c1_shaped.flatten(),
             interp_container.c2_shaped.flatten(),
             interp_container.c3_shaped.flatten(),
-            Fplus,
-            Fcross,
             old_length,
             old_lengths,
             self.data_length,
@@ -261,7 +248,6 @@ class TDInterp:
             inds,
             self.lengths,
             max_length,
-            nChannels,
         )
 
         return self.template_carrier
@@ -269,7 +255,7 @@ class TDInterp:
 
 class BBHWaveformTD:
     def __init__(
-        self, amp_phase_kwargs={}, interp_kwargs={}, use_gpu=False,
+        self, bilby_interferometers, amp_phase_kwargs={}, interp_kwargs={}, use_gpu=False,
     ):
         amp_phase_kwargs["use_gpu"] = use_gpu
         interp_kwargs["use_gpu"] = use_gpu
@@ -285,6 +271,120 @@ class BBHWaveformTD:
         self.num_interp_params = 2
         self.interp_response = TDInterp(**interp_kwargs)
 
+        if bilby_interferometers is None:
+            raise ValueError("Must provide detector_tensors kwarg.")
+
+        self.detector_tensors = self.xp.asarray(
+            [bi.detector_tensor for bi in bilby_interferometers])
+
+        self.detector_start_times = self.xp.asarray(
+            [bi.strain_data.start_time for bi in bilby_interferometers], dtype=self.xp.float64
+        )
+
+        self.detector_vertex = self.xp.asarray(
+            [bi.geometry.vertex for bi in bilby_interferometers], dtype=self.xp.float64
+        )
+
+        self.psd = self.xp.asarray(
+            [bi.amplitude_spectral_density_array ** 2 for bi in bilby_interferometers], dtype=self.xp.float64
+        ).flatten()
+
+        self.psd[self.xp.isinf(self.psd)] = 1e300
+
+        self.data = self.xp.asarray(
+            [bi.frequency_domain_strain for bi in bilby_interferometers], dtype=self.xp.complex128
+        )
+        self.fd_data_length = self.data.shape[1]
+        self.nChannels = self.data.shape[0]
+
+        self.data = self.data.flatten()
+
+        self.bilby_interferometers = bilby_interferometers
+
+        self.all_in_one_likelihood = all_in_one_likelihood_gpu
+
+    def get_detector_response(self, ra, dec, geocent_time, psi):
+        """ Get the detector response for a particular waveform
+
+        Parameters
+        ==========
+        waveform_polarizations: dict
+            polarizations of the waveform
+        parameters: dict
+            parameters describing position and time of arrival of the signal
+
+        Returns
+        =======
+        array_like: A 3x3 array representation of the detector response (signal observed in the interferometer)
+        """
+        signal = {}
+        for mode in waveform_polarizations.keys():
+            det_response = self.antenna_response(
+                parameters['ra'],
+                parameters['dec'],
+                parameters['geocent_time'],
+                parameters['psi'], mode)
+
+            signal[mode] = waveform_polarizations[mode] * det_response
+        signal_ifo = sum(signal.values())
+
+        signal_ifo *= self.strain_data.frequency_mask
+
+        time_shift = self.time_delay_from_geocenter(
+            parameters['ra'], parameters['dec'], parameters['geocent_time'])
+
+        # Be careful to first subtract the two GPS times which are ~1e9 sec.
+        # And then add the time_shift which varies at ~1e-5 sec
+        dt_geocent = parameters['geocent_time'] - self.strain_data.start_time
+        dt = dt_geocent + time_shift
+
+        signal_ifo[self.strain_data.frequency_mask] = signal_ifo[self.strain_data.frequency_mask] * np.exp(
+            -1j * 2 * np.pi * dt * self.strain_data.frequency_array[self.strain_data.frequency_mask])
+
+        signal_ifo[self.strain_data.frequency_mask] *= self.calibration_model.get_calibration_factor(
+            self.strain_data.frequency_array[self.strain_data.frequency_mask],
+            prefix='recalib_{}_'.format(self.name), **parameters)
+
+        return signal_ifo
+
+    def get_detector_information(self, ra, dec, time, psi):
+        # TODO: fix lal part
+
+        gmst = self.xp.fmod(self.xp.asarray(
+            [greenwich_mean_sidereal_time(t_i) for t_i in time]), 2 * np.pi)
+
+        # convert to phi, theta from ra, dec
+        phi = self.xp.asarray(ra) - gmst
+        theta = np.pi / 2 - self.xp.asarray(dec)
+        psi = self.xp.asarray(psi)
+
+        u = self.xp.array([self.xp.cos(phi) * self.xp.cos(theta), self.xp.cos(theta)
+                           * self.xp.sin(phi), -self.xp.sin(theta)]).T
+        v = self.xp.array(
+            [-self.xp.sin(phi), self.xp.cos(phi), self.xp.zeros_like(phi)]).T
+        m = -u * self.xp.sin(psi)[:, None] - v * self.xp.cos(psi)[:, None]
+        n = -u * self.xp.cos(psi)[:, None] + v * self.xp.sin(psi)[:, None]
+
+        polarization_tensor_plus = self.xp.einsum(
+            '...i,...j->...ij', m, m) - self.xp.einsum('...i,...j->...ij', n, n)
+        polarization_tensor_cross = self.xp.einsum(
+            '...i,...j->...ij', m, n) + self.xp.einsum('...i,...j->...ij', n, m)
+
+        antenna_response_plus = self.xp.einsum(
+            'kij,lij->kl', self.detector_tensors, polarization_tensor_plus)
+        antenna_response_cross = self.xp.einsum(
+            'kij,lij->kl', self.detector_tensors, polarization_tensor_cross)
+
+        # get time shift
+        omega = self.xp.array([self.xp.sin(theta) * self.xp.cos(phi),
+                              self.xp.sin(theta) * self.xp.sin(phi), self.xp.cos(theta)]).T
+
+        # detector_coords is delta_d because detector2 in the determination of delta_d is 0,0,0 for from geocenter
+        # delta_d = detector2 - dector1  # second array is zeros in bilby
+        time_shift = self.xp.einsum(
+            "ij, kj->ki", omega, self.detector_vertex) / speed_of_light
+
+        return (antenna_response_plus, antenna_response_cross, time_shift)
 
     def __call__(
         self,
@@ -299,10 +399,10 @@ class BBHWaveformTD:
         distance,
         phiRef,
         inc,
-        lam,
-        beta,
+        ra,
+        dec,
         psi,
-        t_ref,
+        geocent_time,
         sampling_frequency=1024,
         Tobs=60.0,
         modes=None,
@@ -324,10 +424,10 @@ class BBHWaveformTD:
         distance = np.atleast_1d(distance)
         phiRef = np.atleast_1d(phiRef)
         inc = np.atleast_1d(inc)
-        lam = np.atleast_1d(lam)
-        beta = np.atleast_1d(beta)
+        ra = np.atleast_1d(ra)
+        dec = np.atleast_1d(dec)
         psi = np.atleast_1d(psi)
-        t_ref = np.atleast_1d(t_ref)
+        geocent_time = np.atleast_1d(geocent_time)
 
         self.num_bin_all = len(m1)
 
@@ -344,50 +444,104 @@ class BBHWaveformTD:
         else:
             self.num_modes = len(modes)
 
-        self.amp_phase_gen(
-            m1,
-            m2,
-            # chi1x,
-            # chi1y,
-            chi1z,
-            # chi2x,
-            # chi2y,
-            chi2z,
-            distance,
-            phiRef,
-            modes=modes,
-            fs=fs,
-        )
+        import time as tttttt
+        num = 10
+        st = tttttt.perf_counter()
+        for _ in range(num):
+            self.amp_phase_gen(
+                m1,
+                m2,
+                # chi1x,
+                # chi1y,
+                chi1z,
+                # chi2x,
+                # chi2y,
+                chi2z,
+                distance,
+                phiRef,
+                modes=modes,
+                fs=fs,
+            )
+        et = tttttt.perf_counter()
 
-        splines = CubicSplineInterpolantTD(
-            self.amp_phase_gen.t.T.flatten().copy(),
-            self.amp_phase_gen.hlms_real.transpose(2, 1, 0).flatten().copy(),
-            self.amp_phase_gen.lengths,
-            (2 * self.num_modes + 1),
-            self.num_bin_all,
-            use_gpu=self.use_gpu,
-        )
+        print("amp phase", self.num_bin_all, (et - st) /
+              num, (et - st) / num / self.num_bin_all)
 
-        # TODO: try single block reduction for likelihood (will probably be worse for smaller batch, but maybe better for larger batch)?
-        template_channels = self.interp_response(
+        st = tttttt.perf_counter()
+        for _ in range(num):
+            splines = CubicSplineInterpolantTD(
+                self.amp_phase_gen.t.T.flatten().copy(),
+                self.amp_phase_gen.hlms_real.transpose(
+                    2, 1, 0).flatten().copy(),
+                self.amp_phase_gen.lengths,
+                (2 * self.num_modes + 1),
+                self.num_bin_all,
+                use_gpu=self.use_gpu,
+            )
+        et = tttttt.perf_counter()
+
+        print("splines", self.num_bin_all, (et - st) /
+              num, (et - st) / num / self.num_bin_all)
+
+        st = tttttt.perf_counter()
+        for _ in range(num):
+            # TODO: try single block reduction for likelihood (will probably be worse for smaller batch, but maybe better for larger batch)?
+            template_channels = self.interp_response(
                 self.dataTime,
                 splines,
-                lam,
-                beta,
-                psi,
                 self.amp_phase_gen.lengths,
                 self.data_length,
                 self.num_modes,
-                3,
                 self.amp_phase_gen.ells,
                 self.amp_phase_gen.mms,
+                self.num_bin_all,
                 dt=1 / sampling_frequency,
             )
 
-        return template_channels.reshape(self.num_bin_all, 3, self.data_length)
-            # self.interp_response.start_inds,
-            # self.interp_response.lengths,
-    
+        et = tttttt.perf_counter()
+        print("interp", self.num_bin_all, (et - st) /
+              num, (et - st) / num / self.num_bin_all)
+
+        st = tttttt.perf_counter()
+        for _ in range(num):
+            Fplus, Fcross, time_shift = self.get_detector_information(
+                ra, dec, geocent_time, psi)
+
+            template_channels = template_channels
+
+            template_channels_fd_plus = self.xp.fft.rfft(
+                template_channels.real, axis=-1).flatten()
+            template_channels_fd_cross = self.xp.fft.rfft(
+                template_channels.imag, axis=-1).flatten()
+
+            num_threads_sum = 1024
+
+            num_temps_per_bin = int(
+                np.ceil((self.fd_data_length + num_threads_sum - 1) / num_threads_sum))
+
+            temp_sums = self.xp.zeros(
+                num_temps_per_bin * self.num_bin_all * self.nChannels, dtype=self.xp.complex128)
+            dt = 1/sampling_frequency
+            T = self.data_length * dt
+            df = 1/T
+            Fplus = Fplus.flatten()
+            Fcross = Fcross.flatten()
+            time_shift = time_shift.flatten()
+
+            self.all_in_one_likelihood(
+                temp_sums, template_channels_fd_plus, template_channels_fd_cross, self.data, self.psd, Fplus, Fcross, time_shift, df, self.num_bin_all, self.nChannels, self.fd_data_length
+            )
+
+            like = -1./2. * df * 4. * \
+                temp_sums.reshape(-1, self.num_bin_all,
+                                  self.nChannels).sum(axis=(0, 2))
+
+        et = tttttt.perf_counter()
+        print("final part", self.num_bin_all, (et - st) /
+              num, (et - st) / num / self.num_bin_all)
+
+        breakpoint()
+        return like
 
 
 class ODEWrapper:
@@ -473,7 +627,8 @@ class SEOBNRv4PHM:
         self.nparams = 2
 
         #self.HTM_AC = HTMalign_AC()
-        self.integrator = DOPR853(ODEWrapper(use_gpu=True), stopping_criterion=StoppingCriterion(True, read_out_to_cpu=False), tmax=1e7*1e6, max_step=300, use_gpu=True, read_out_to_cpu=False)  # self.use_gpu)  # use_gpu=use_gpu)
+        self.integrator = DOPR853(ODEWrapper(use_gpu=True), stopping_criterion=StoppingCriterion(
+            True, read_out_to_cpu=False), tmax=1e7*1e6, max_step=300, use_gpu=True, read_out_to_cpu=False)  # self.use_gpu)  # use_gpu=use_gpu)
 
     def _sanity_check_modes(self, ells, mms):
         for (ell, mm) in zip(ells, mms):
@@ -520,7 +675,7 @@ class SEOBNRv4PHM:
         xOut = self.xp.zeros_like(x0In).flatten()
         x0In = x0In.flatten()
 
-        #breakpoint()
+        # breakpoint()
         self.root_find(
             xOut,
             x0In,
@@ -575,20 +730,22 @@ class SEOBNRv4PHM:
         dSS = np.zeros_like(m_1_scaled)
 
         condBound = self.xp.array([r0, np.full_like(r0, 0.0), pr0, pphi0])
-        argsData = self.xp.array([m_1_scaled, m_2_scaled, chi_1, chi_2, K, d5, dSO, dSS])
+        argsData = self.xp.array(
+            [m_1_scaled, m_2_scaled, chi_1, chi_2, K, d5, dSO, dSS])
 
         # TODO: make adjustable
         # TODO: debug dopr?
         t, traj, num_steps = self.integrator.integrate(
-                    condBound.copy(), argsData.copy()
-                )
-            
+            condBound.copy(), argsData.copy()
+        )
+
         num_steps = num_steps.astype(np.int32)
-        
+
         num_steps_max = num_steps.max().item()
-        
+
         return (
-            (t[:num_steps_max, :] * self.xp.asarray(mt[self.xp.newaxis, :]) * MTSUN_SI).T,
+            (t[:num_steps_max, :] *
+             self.xp.asarray(mt[self.xp.newaxis, :]) * MTSUN_SI).T,
             traj[:num_steps_max, :, :].transpose(2, 1, 0),
             num_steps,
         )
@@ -635,11 +792,9 @@ class SEOBNRv4PHM:
         num_modes = (self.hlms_real.shape[1] - 1) / 2
         assert (self.hlms_real.shape[1] % 2) == 1
 
-
         hlms_real = self.hlms_real[:, 0:num_modes]
         hlms_imag = self.hlms_real[:, num_modes:2 * num_modes]
         return hlms_real + 1j * hlms_imag
-        
 
     def __call__(
         self,
@@ -657,8 +812,10 @@ class SEOBNRv4PHM:
         fs=20.0,  # Hz
     ):
         if modes is not None:
-            ells = self.xp.asarray([ell for ell, mm in modes], dtype=self.xp.int32)
-            mms = self.xp.asarray([mm for ell, mm in modes], dtype=self.xp.int32)
+            ells = self.xp.asarray(
+                [ell for ell, mm in modes], dtype=self.xp.int32)
+            mms = self.xp.asarray(
+                [mm for ell, mm in modes], dtype=self.xp.int32)
 
             self._sanity_check_modes(ells, mms)
 
@@ -670,18 +827,20 @@ class SEOBNRv4PHM:
 
         self.num_bin_all = len(m1)
 
-        r0, pphi0, pr0 = self.get_initial_conditions(m1, m2, chi1z, chi2z, fs=fs)
-        
+        r0, pphi0, pr0 = self.get_initial_conditions(
+            m1, m2, chi1z, chi2z, fs=fs)
+
         t, traj, num_steps = self.run_trajectory(
             r0, pphi0, pr0, m1, m2, chi1z, chi2z, fs=fs
         )
         self.traj = traj
 
         distance = self.xp.asarray(distance)
-        hlms = self.get_hlms(traj, m1, m2, chi1z, chi2z, num_steps, ells, mms) / distance[:, None, None]
+        hlms = self.get_hlms(traj, m1, m2, chi1z, chi2z,
+                             num_steps, ells, mms) / distance[:, None, None]
 
-        phi =  traj[:, 1]
-        
+        phi = traj[:, 1]
+
         self.lengths = num_steps.astype(self.xp.int32)
         num_steps_max = num_steps.max()
         self.t = t[:, :num_steps_max]
@@ -703,7 +862,7 @@ if __name__ == "__main__":
     setDevice(2)
     eob = SEOBNRv4PHM(use_gpu=True)  # gpu_available)
 
-    mt = 40.0 # Total mass in solar masses
+    mt = 40.0  # Total mass in solar masses
     q = 2.5
     num = int(1e0)
     m1 = np.full(num, mt * q / (1.+q))
@@ -718,10 +877,10 @@ if __name__ == "__main__":
     distance = np.full(num, 100.0) * 1e6 * PC_SI  # Mpc -> m
     phiRef = np.full(num, 0.0)
     inc = np.full(num, np.pi / 3.0)
-    lam = np.full(num, np.pi / 4.0)
-    beta = np.full(num, np.pi / 5.0)
+    ra = np.full(num, np.pi / 4.0)
+    dec = np.full(num, np.pi / 5.0)
     psi = np.full(num, np.pi / 6.0)
-    t_ref = np.full(num, np.pi / 7.0)
+    geocent_time = np.full(num, np.pi / 7.0)
 
     # eob(m1, m2, chi1z, chi2z, distance, phiRef)
     bbh = BBHWaveformTD(use_gpu=True)
@@ -746,31 +905,29 @@ if __name__ == "__main__":
             )
         """
         out = bbh(
-        m1,
-        m2,
-        # chi1x,
-        # chi1y,
-        chi1z,
-        # chi2x,
-        # chi2y,
-        chi2z,
-        distance,
-        phiRef,
-        inc,
-        lam,
-        beta,
-        psi,
-        t_ref,
-        sampling_frequency=1024.,
-        Tobs=5.0,
-        modes=None,
-        bufferSize=None,
-        fill=False,
-    )
+            m1,
+            m2,
+            # chi1x,
+            # chi1y,
+            chi1z,
+            # chi2x,
+            # chi2y,
+            chi2z,
+            distance,
+            phiRef,
+            inc,
+            ra,
+            dec,
+            psi,
+            geocent_time,
+            sampling_frequency=1024.,
+            Tobs=5.0,
+            modes=None,
+            bufferSize=None,
+            fill=False,
+        )
         print(jj)
     et = time.perf_counter()
     print((et - st)/n/num, "done")
-    
-
 
     breakpoint()
