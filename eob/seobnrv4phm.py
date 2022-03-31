@@ -409,6 +409,7 @@ class BBHWaveformTD:
         bufferSize=None,
         fill=False,
         fs=20.0,
+        return_type="like",
     ):
 
         # TODO: if t_obs_end = t_mrg
@@ -444,103 +445,124 @@ class BBHWaveformTD:
         else:
             self.num_modes = len(modes)
 
-        import time as tttttt
-        num = 10
+        """import time as tttttt
+        num = 1
         st = tttttt.perf_counter()
-        for _ in range(num):
-            self.amp_phase_gen(
-                m1,
-                m2,
-                # chi1x,
-                # chi1y,
-                chi1z,
-                # chi2x,
-                # chi2y,
-                chi2z,
-                distance,
-                phiRef,
-                modes=modes,
-                fs=fs,
-            )
-        et = tttttt.perf_counter()
+        for _ in range(num):"""
+        self.amp_phase_gen(
+            m1,
+            m2,
+            # chi1x,
+            # chi1y,
+            chi1z,
+            # chi2x,
+            # chi2y,
+            chi2z,
+            distance,
+            phiRef,
+            modes=modes,
+            fs=fs,
+        )
+        """et = tttttt.perf_counter()
 
         print("amp phase", self.num_bin_all, (et - st) /
               num, (et - st) / num / self.num_bin_all)
 
         st = tttttt.perf_counter()
-        for _ in range(num):
-            splines = CubicSplineInterpolantTD(
-                self.amp_phase_gen.t.T.flatten().copy(),
-                self.amp_phase_gen.hlms_real.transpose(
-                    2, 1, 0).flatten().copy(),
-                self.amp_phase_gen.lengths,
-                (2 * self.num_modes + 1),
-                self.num_bin_all,
-                use_gpu=self.use_gpu,
-            )
-        et = tttttt.perf_counter()
+        for _ in range(num):"""
+        splines = CubicSplineInterpolantTD(
+            self.amp_phase_gen.t.T.flatten().copy(),
+            self.amp_phase_gen.hlms_real.transpose(
+                2, 1, 0).flatten().copy(),
+            self.amp_phase_gen.lengths,
+            (2 * self.num_modes + 1),
+            self.num_bin_all,
+            use_gpu=self.use_gpu,
+        )
+        """et = tttttt.perf_counter()
 
         print("splines", self.num_bin_all, (et - st) /
               num, (et - st) / num / self.num_bin_all)
 
         st = tttttt.perf_counter()
-        for _ in range(num):
-            # TODO: try single block reduction for likelihood (will probably be worse for smaller batch, but maybe better for larger batch)?
-            template_channels = self.interp_response(
-                self.dataTime,
-                splines,
-                self.amp_phase_gen.lengths,
-                self.data_length,
-                self.num_modes,
-                self.amp_phase_gen.ells,
-                self.amp_phase_gen.mms,
-                self.num_bin_all,
-                dt=1 / sampling_frequency,
-            )
+        for _ in range(num):"""
+        # TODO: try single block reduction for likelihood (will probably be worse for smaller batch, but maybe better for larger batch)?
+        template_channels = self.interp_response(
+            self.dataTime,
+            splines,
+            self.amp_phase_gen.lengths,
+            self.data_length,
+            self.num_modes,
+            self.amp_phase_gen.ells,
+            self.amp_phase_gen.mms,
+            self.num_bin_all,
+            dt=1 / sampling_frequency,
+        )
 
-        et = tttttt.perf_counter()
+        """et = tttttt.perf_counter()
         print("interp", self.num_bin_all, (et - st) /
               num, (et - st) / num / self.num_bin_all)
+        """
+        template_channels = template_channels.reshape(
+            self.num_bin_all, self.data_length)
+        if return_type == "geocenter_td":
+            return template_channels
 
-        st = tttttt.perf_counter()
-        for _ in range(num):
-            Fplus, Fcross, time_shift = self.get_detector_information(
-                ra, dec, geocent_time, psi)
+        """st = tttttt.perf_counter()
+        for _ in range(num):"""
 
-            template_channels = template_channels
+        breakpoint()
+        template_channels_fd_plus = self.xp.fft.rfft(
+            template_channels.real, axis=-1) * 1 / sampling_frequency
+        template_channels_fd_cross = self.xp.fft.rfft(
+            template_channels.imag, axis=-1) * 1 / sampling_frequency
 
-            template_channels_fd_plus = self.xp.fft.rfft(
-                template_channels.real, axis=-1).flatten()
-            template_channels_fd_cross = self.xp.fft.rfft(
-                template_channels.imag, axis=-1).flatten()
+        if return_type == "geocenter_fd":
+            return (template_channels_fd_plus, template_channels_fd_cross)
 
-            num_threads_sum = 1024
+        Fplus, Fcross, time_shift = self.get_detector_information(
+            ra, dec, geocent_time, psi)
 
-            num_temps_per_bin = int(
-                np.ceil((self.fd_data_length + num_threads_sum - 1) / num_threads_sum))
+        if return_type == "detector_td":
+            raise NotImplementedError
 
-            temp_sums = self.xp.zeros(
-                num_temps_per_bin * self.num_bin_all * self.nChannels, dtype=self.xp.complex128)
-            dt = 1/sampling_frequency
-            T = self.data_length * dt
-            df = 1/T
-            Fplus = Fplus.flatten()
-            Fcross = Fcross.flatten()
-            time_shift = time_shift.flatten()
+        if return_type == "detector_fd":
+            f = self.xp.fft.rfftfreq(
+                self.data_length, 1.0 / sampling_frequency)
+            signal_out = (Fplus.T[:, :, None] * template_channels_fd_plus[:, None, :] + Fcross.T[:, :, None] *
+                          template_channels_fd_cross[:, None, :]) * self.xp.exp(-1j * 2. * np.pi * f[None, None, :] * time_shift.T[:, :, None])
+            return signal_out
 
-            self.all_in_one_likelihood(
-                temp_sums, template_channels_fd_plus, template_channels_fd_cross, self.data, self.psd, Fplus, Fcross, time_shift, df, self.num_bin_all, self.nChannels, self.fd_data_length
-            )
+        template_channels_fd_plus = template_channels_fd_plus.flatten()
+        template_channels_fd_cross = template_channels_fd_cross.flatten()
 
-            like = -1./2. * df * 4. * \
-                temp_sums.reshape(-1, self.num_bin_all,
-                                  self.nChannels).sum(axis=(0, 2))
+        num_threads_sum = 1024
 
-        et = tttttt.perf_counter()
+        num_temps_per_bin = int(
+            np.ceil((self.fd_data_length + num_threads_sum - 1) / num_threads_sum))
+
+        temp_sums = self.xp.zeros(
+            num_temps_per_bin * self.num_bin_all * self.nChannels, dtype=self.xp.complex128)
+        dt = 1/sampling_frequency
+        T = self.data_length * dt
+        df = 1/T
+        Fplus = Fplus.flatten()
+        Fcross = Fcross.flatten()
+        time_shift = time_shift.flatten()
+
+        self.all_in_one_likelihood(
+            temp_sums, template_channels_fd_plus, template_channels_fd_cross, self.data, self.psd, Fplus, Fcross, time_shift, df, self.num_bin_all, self.nChannels, self.fd_data_length
+        )
+
+        like = -1./2. * df * 4. * \
+            temp_sums.reshape(-1, self.num_bin_all,
+                              self.nChannels).sum(axis=(0, 2))
+
+        """et = tttttt.perf_counter()
         print("final part", self.num_bin_all, (et - st) /
               num, (et - st) / num / self.num_bin_all)
 
-        breakpoint()
+        breakpoint()"""
         return like
 
 
@@ -564,7 +586,7 @@ class ODEWrapper:
         additionalArgs_in = additionalArgs.flatten()
 
         self.ode(x_in, args_in, k_in, additionalArgs_in, numSys)
-
+        breakpoint()
         k[:] = k_in.reshape(reshape)
 
 
@@ -735,6 +757,7 @@ class SEOBNRv4PHM:
 
         # TODO: make adjustable
         # TODO: debug dopr?
+        breakpoint()
         t, traj, num_steps = self.integrator.integrate(
             condBound.copy(), argsData.copy()
         )
