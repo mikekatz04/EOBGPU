@@ -19,6 +19,8 @@ cdef extern from "EOB.hh":
     void ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys);
     void evaluate_Ham_align_AD_wrap(double *out, double r, double phi, double pr, double pphi, double m_1, double m_2, double chi_1, double chi_2, double K, double d5, double dSO, double dSS);
 
+    void EOBComputeNewtonMultipolePrefixes_wrap(cmplx *prefixes, double *m1, double *m2, int ell_max, int numSys);
+
 @pointer_adjust
 def compute_hlms(hlms, r_arr, phi_arr, pr_arr, L_arr,
               m1_arr, m2_arr, chi1_arr, chi2_arr,
@@ -94,3 +96,12 @@ def ODE_Ham_align_AD(x, arg, k, additionalArgs, numSys):
 def evaluate_Ham_align_AD(out, r, phi, pr, pphi, m_1, m_2, chi_1, chi_2, K, d5, dSO, dSS):
     cdef size_t out_in = out
     evaluate_Ham_align_AD_wrap(<double *>out_in, r, phi, pr, pphi, m_1, m_2, chi_1, chi_2, K, d5, dSO, dSS)
+
+@pointer_adjust
+def EOBComputeNewtonMultipolePrefixes(prefixes, m1, m2, ell_max, numSys):
+
+    cdef size_t prefixes_in = prefixes
+    cdef size_t m1_in = m1
+    cdef size_t m2_in = m2
+
+    EOBComputeNewtonMultipolePrefixes_wrap(<cmplx *>prefixes_in, <double *>m1_in, <double *>m2_in, ell_max, numSys)

@@ -890,11 +890,21 @@ polar(const _Tp& __rho, const _Tp& __theta = _Tp(0))
 }
 
 // log
-
+/*
 template<class _Tp>
 inline CUDA_CALLABLE_MEMBER
 complex<_Tp>
 log(const complex<_Tp>& __x)
+{
+    return complex<_Tp>(log(abs(__x)), arg(__x));
+}*/
+
+// log
+
+template<class _Tp>
+inline CUDA_CALLABLE_MEMBER
+complex<_Tp>
+complex_log(const complex<_Tp>& __x)
 {
     return complex<_Tp>(log(abs(__x)), arg(__x));
 }

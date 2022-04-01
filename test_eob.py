@@ -9,18 +9,18 @@ from cupy.cuda.runtime import setDevice
 setDevice(1)
 
 
-mt = 40.0  # Total mass in solar masses
+mt = 60.0  # Total mass in solar masses
 q = 2.5
-num = int(5e3)
+num = int(1e2)
 # was 16.82307190336287 0.001682307190336287
-m1 = np.full(num, mt * q / (1.+q))
-m2 = np.full(num, mt / (1.+q))
+m1 = 0.55 * mt  # np.full(num, mt * q / (1.+q))
+m2 = 0.45 * mt  # np.full(num, mt / (1.+q))
 # chi1x,
 # chi1y,
-chi1z = np.full(num, 0.0001)
+chi1z = np.full(num, 0.0000)
 # chi2x,
 # chi2y,
-chi2z = np.full(num, 0.0001)
+chi2z = np.full(num, 0.0000)
 distance = np.full(num, 100.0) * 1e6 * PC_SI  # Mpc -> m
 phiRef = np.full(num, 0.0)
 inc = np.full(num, np.pi / 3.0)
@@ -36,7 +36,6 @@ bilby_interferometers = [bilby.gw.detector.get_empty_interferometer(
     interf) for interf in ['L1', "H1"]]
 
 Tobs = 3.
-start = 1126259446.
 
 sampling_frequency = 4096.0
 data_length = int(Tobs * sampling_frequency)

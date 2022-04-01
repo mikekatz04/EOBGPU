@@ -174,7 +174,7 @@ void compute_hlms_wrap(cmplx *hlms, double *r_arr, double *phi_arr, double *pr_a
 #endif
 }
 
-#define euler_gamma 0.5772156649015329
+#define euler_gamma 0.57721566490153286060651209008240243104215933593992
 
 CUDA_CALLABLE_MEMBER
 double evaluate_Ham_align_AD(double r, double phi, double pr, double pphi, double m_1, double m_2, double chi_1, double chi_2, double K, double d5, double dSO, double dSS)
@@ -621,7 +621,7 @@ void ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additional
 #endif
 }
 
-#define BLOCK 64
+#define BLOCK 32
 CUDA_CALLABLE_MEMBER
 void IC_cons(double *res, double *x, double *args, double *additionalArgs, double *grad_out)
 {
@@ -647,6 +647,153 @@ void IC_cons(double *res, double *x, double *args, double *additionalArgs, doubl
     double dHdpphi = grad_out[3 * BLOCK + i];
     res[0 * BLOCK + i] = dHdpphi - omega;
     res[1 * BLOCK + i] = dHdr;
+}
+
+CUDA_CALLABLE_MEMBER
+int factorial(int n)
+{
+    double temp = tgamma((double)(n + 1));
+    int out = (int) temp;
+    return out;
+}
+CUDA_CALLABLE_MEMBER
+int factorial2(int n)
+{
+    // odd
+    double temp;
+    if (n % 2)
+    {
+        temp = tgamma((double)(n/2+1)) * pow(2, ((n+1)/2))/sqrt(PI);
+    }
+    else
+    {
+        temp = pow(2, (n/2)) * factorial(n/2); 
+    }
+    int out = (int)temp;
+    return out;
+}
+
+CUDA_CALLABLE_MEMBER
+cmplx CalculateThisMultipolePrefix(double m1, double m2, int l, int m)
+{
+    cmplx n(0.0, 0.0);
+    cmplx I(0.0, 1.0);
+
+    double totalMass = m1 + m2;
+
+    int epsilon = (l + m) % 2;
+
+    double x1 = m1 / totalMass;
+    double x2 = m2 / totalMass;
+
+    double eta = m1 * m2 / (totalMass * totalMass);
+    int sign;
+    if (abs(m % 2) == 0)
+        sign = 1;
+    else
+        sign = -1;
+
+    //
+    // Eq. 7 of Damour, Iyer and Nagar 2008.
+    // For odd m, c is proportional to dM = m1-m2. In the equal-mass case, c = dM = 0.
+    // In the equal-mass unequal-spin case, however, when spins are different, the odd m term is generally not zero.
+    // In this case, c can be written as c0 * dM, while spins terms in PN expansion may take the form chiA/dM.
+    // Although the dM's cancel analytically, we can not implement c and chiA/dM with the possibility of dM -> 0.
+    // Therefore, for this case, we give numerical values of c0 for relevant modes, and c0 is calculated as
+    // c / dM in the limit of dM -> 0. Consistently, for this case, we implement chiA instead of chiA/dM
+    // in LALSimIMRSpinEOBFactorizedWaveform.c.
+    double c;
+    if ((m1 != m2) || (sign == 1))
+        c = pow(x2, l + epsilon - 1) + sign * pow(x1, l + epsilon - 1);
+    else
+    {
+        if (l == 2)
+            c = -1.0;
+        else if (l == 3)
+            c = -1.0;
+        else if (l == 4)
+            c = -0.5;
+        else if (l == 5)
+            c = -0.5;
+        else
+            c = 0.0;
+    }
+
+    // Eqs 5 and 6. Dependent on the value of epsilon (parity), we get different n
+    double mult1, mult2;
+    if (epsilon == 0)
+    {
+        n = I * (double)m;
+         //n = pow(n, (double)l);
+        for (int li = 0; li < l; li += 1) n *= n;
+       
+
+        mult1 = 8.0 * PI / factorial2(2 * l + 1);
+        mult2 = ((l + 1) * (l + 2)) / (l * (l - 1));
+        mult2 = sqrt(mult2);
+
+        n *= mult1;
+        n *= mult2;
+    }
+
+    else if (epsilon == 1)
+    {
+        n = I * (double)m;
+        //n = pow(n, (double)l);
+        for (int li = 0; li < l; li += 1) n *= n;
+        n = -n;
+
+        mult1 = 16.0 * PI / factorial2(2 * l + 1);
+
+        mult2 = (2 * l + 1) * (l + 2) * (l * l - m * m);
+        mult2 /= (2 * l - 1) * (l + 1) * l * (l - 1);
+        mult2 = sqrt(mult2);
+
+        n *= I * mult1;
+        n *= mult2;
+    }
+
+    cmplx prefix = n * eta * c;
+    return prefix;
+}
+
+CUDA_KERNEL
+void EOBComputeNewtonMultipolePrefixes(cmplx *prefixes, double *m1, double *m2, int ell_max, int numSys)
+{
+    int start, increment;
+#ifdef __CUDACC__
+    start = threadIdx.x + blockDim.x * blockIdx.x;
+    increment = gridDim.x * blockDim.x;
+#else
+    start = 0;
+    increment = 1;
+// pragma omp parallel for
+#endif
+    for (int bin_i = start; bin_i < numSys; bin_i += increment)
+    {
+        double m1_i = m1[bin_i];
+        double m2_i = m1[bin_i];
+        int lm_index = 0;
+        for (int l = 2; l < ell_max + 1; l += 1)
+        {
+            for (int m = 1; m < l + 1; m += 1)
+            {
+                prefixes[lm_index * numSys + bin_i] = CalculateThisMultipolePrefix(m1_i, m2_i, l, m);
+                lm_index += 1;
+            }
+        }
+    }
+}
+
+void EOBComputeNewtonMultipolePrefixes_wrap(cmplx *prefixes, double *m1, double *m2, int ell_max, int numSys)
+{
+#ifdef __CUDACC__
+    EOBComputeNewtonMultipolePrefixes<<<numSys, NUM_THREADS_EOB>>>(prefixes, m1, m2, ell_max, numSys);
+    cudaDeviceSynchronize();
+    gpuErrchk(cudaGetLastError());
+#else
+    EOBComputeNewtonMultipolePrefixes(prefixes, m1, m2, ell_max, numSys);
+#endif
 }
 
 CUDA_CALLABLE_MEMBER
@@ -696,8 +843,1828 @@ void RR_force_2PN(double *force_out, double *args, double *additionalArgs)
     force_out[1 * BLOCK + i] = Fphi;
 }
 
+
+typedef struct FacWaveformCoeffsTag
+{
+    double delta22vh3;
+    double delta22vh6;
+    double delta22vh6S;
+    double delta22v8;
+    double delta22v8S;
+    double delta22vh9;
+    double delta22v5;
+    double delta22v6;
+    double delta22v6S;
+
+    double rho22v2;
+    double rho22v3;
+    double rho22v3S;
+    double rho22v4;
+    double rho22v4S;
+    double rho22v5;
+    double rho22v5S;
+    double rho22v6;
+    double rho22v6S;
+    double rho22v6l;
+    double rho22v7;
+    double rho22v7S;
+    double rho22v8;
+    double rho22v8S;
+    double rho22v8l;
+    double rho22v10;
+    double rho22v10l;
+
+    double delta21vh3;
+    double delta21vh6;
+    double delta21vh6S;
+    double delta21vh7;
+    double delta21vh7S;
+    double delta21vh9;
+    double delta21v5;
+    double delta21v7;
+
+    double rho21v1;
+    double rho21v2;
+    double rho21v2S;
+    double rho21v3;
+    double rho21v3S;
+    double rho21v4;
+    double rho21v4S;
+    double rho21v5;
+    double rho21v5S;
+    double rho21v6;
+    double rho21v6S;
+    double rho21v6l;
+    double rho21v7;
+    double rho21v7S;
+    double rho21v7l;
+    double rho21v7lS;
+    double rho21v8;
+    double rho21v8l;
+    double rho21v10;
+    double rho21v10l;
+
+    double f21v1;
+    double f21v1S;
+    double f21v3;
+    double f21v3S;
+    double f21v4;
+    double f21v5;
+    double f21v6;
+    double f21v7c;
+
+    double delta33vh3;
+    double delta33vh6;
+    double delta33vh6S;
+    double delta33vh9;
+    double delta33v5;
+    double delta33v7;
+
+    double rho33v2;
+    double rho33v3;
+    double rho33v4;
+    double rho33v4S;
+    double rho33v5;
+    double rho33v5S;
+    double rho33v6;
+    double rho33v6S;
+    double rho33v6l;
+    double rho33v7;
+    double rho33v7S;
+    double rho33v8;
+    double rho33v8l;
+    double rho33v10;
+    double rho33v10l;
+
+    double f33v3;
+    double f33v4;
+    double f33v5;
+    double f33v6;
+    double f33v3S;
+    double f33vh6;
+
+    double delta32vh3;
+    double delta32vh4;
+    double delta32vh4S;
+    double delta32vh6;
+    double delta32vh6S;
+    double delta32vh9;
+
+    double rho32v;
+    double rho32vS;
+    double rho32v2;
+    double rho32v2S;
+    double rho32v3;
+    double rho32v3S;
+    double rho32v4;
+    double rho32v4S;
+    double rho32v5;
+    double rho32v5S;
+    double rho32v6;
+    double rho32v6S;
+    double rho32v6l;
+    double rho32v8;
+    double rho32v8l;
+
+    double delta31vh3;
+    double delta31vh6;
+    double delta31vh6S;
+    double delta31vh7;
+    double delta31vh7S;
+    double delta31vh9;
+    double delta31v5;
+
+    double rho31v2;
+    double rho31v3;
+    double rho31v4;
+    double rho31v4S;
+    double rho31v5;
+    double rho31v5S;
+    double rho31v6;
+    double rho31v6S;
+    double rho31v6l;
+    double rho31v7;
+    double rho31v7S;
+    double rho31v8;
+    double rho31v8l;
+
+    double f31v3;
+    double f31v3S;
+
+    double delta44vh3;
+    double delta44vh6;
+    double delta44vh6S;
+    double delta44v5;
+    double delta44vh9;
+
+    double rho44v2;
+    double rho44v3;
+    double rho44v3S;
+    double rho44v4;
+    double rho44v4S;
+    double rho44v5;
+    double rho44v5S;
+    double rho44v6;
+    double rho44v6S;
+    double rho44v6l;
+    double rho44v8;
+    double rho44v8l;
+    double rho44v10;
+    double rho44v10l;
+
+    double delta43vh3;
+    double delta43vh4;
+    double delta43vh4S;
+    double delta43vh6;
+
+    double rho43v;
+    double rho43v2;
+    double rho43v4;
+    double rho43v4S;
+    double rho43v5;
+    double rho43v5S;
+    double rho43v6;
+    double rho43v6l;
+
+    double f43v;
+    double f43vS;
+
+    double delta42vh3;
+    double delta42vh6;
+    double delta42vh6S;
+
+    double rho42v2;
+    double rho42v3;
+    double rho42v3S;
+    double rho42v4;
+    double rho42v4S;
+    double rho42v5;
+    double rho42v5S;
+    double rho42v6;
+    double rho42v6S;
+    double rho42v6l;
+
+    double delta41vh3;
+    double delta41vh4;
+    double delta41vh4S;
+    double delta41vh6;
+
+    double rho41v;
+    double rho41v2;
+    double rho41v4;
+    double rho41v4S;
+    double rho41v5;
+    double rho41v5S;
+    double rho41v6;
+    double rho41v6l;
+
+    double f41v;
+    double f41vS;
+
+    double delta55vh3;
+    double delta55vh6;
+    double delta55vh9;
+
+    double delta55v5;
+    double rho55v2;
+    double rho55v3;
+    double rho55v3S;
+    double rho55v4;
+    double rho55v4S;
+    double rho55v5;
+    double rho55v5S;
+    double rho55v6;
+    double rho55v6l;
+    double rho55v8;
+    double rho55v8l;
+    double rho55v10;
+    double rho55v10l;
+    double f55v3;
+    double f55v4;
+    double f55v5c;
+
+    double delta54vh3;
+    double delta54vh4;
+    double delta54vh4S;
+    double rho54v2;
+    double rho54v3;
+    double rho54v3S;
+    double rho54v4;
+    double rho54v4S;
+
+    double delta53vh3;
+    double rho53v2;
+    double rho53v3;
+    double rho53v3S;
+    double rho53v4;
+    double rho53v4S;
+    double rho53v5;
+    double rho53v5S;
+
+    double delta52vh3;
+    double delta52vh4;
+    double delta52vh4S;
+    double rho52v2;
+    double rho52v3;
+    double rho52v3S;
+    double rho52v4;
+    double rho52v4S;
+
+    double delta51vh3;
+    double rho51v2;
+    double rho51v3;
+    double rho51v3S;
+    double rho51v4;
+    double rho51v4S;
+    double rho51v5;
+    double rho51v5S;
+
+    double delta66vh3;
+    double rho66v2;
+    double rho66v3;
+    double rho66v3S;
+    double rho66v4;
+    double rho66v4S;
+
+    double delta65vh3;
+    double rho65v2;
+    double rho65v3;
+    double rho65v3S;
+
+    double delta64vh3;
+    double rho64v2;
+    double rho64v3;
+    double rho64v3S;
+    double rho64v4;
+    double rho64v4S;
+
+    double delta63vh3;
+    double rho63v2;
+    double rho63v3;
+    double rho63v3S;
+
+    double delta62vh3;
+    double rho62v2;
+    double rho62v3;
+    double rho62v3S;
+    double rho62v4;
+    double rho62v4S;
+
+    double delta61vh3;
+    double rho61v2;
+    double rho61v3;
+    double rho61v3S;
+
+    double delta77vh3;
+    double rho77v2;
+    double rho77v3;
+    double rho77v3S;
+
+    double rho76v2;
+
+    double delta75vh3;
+    double rho75v2;
+    double rho75v3;
+    double rho75v3S;
+
+    double rho74v2;
+
+    double delta73vh3;
+    double rho73v2;
+    double rho73v3;
+    double rho73v3S;
+
+    double rho72v2;
+
+    double delta71vh3;
+    double rho71v2;
+    double rho71v3;
+    double rho71v3S;
+
+    double rho88v2;
+    double rho87v2;
+    double rho86v2;
+    double rho85v2;
+    double rho84v2;
+    double rho83v2;
+    double rho82v2;
+    double rho81v2;
+} FacWaveformCoeffs;
+
 CUDA_CALLABLE_MEMBER
-double IC_diss(double pr, double *args, double *additionalArgs, double *grad_out, double *hess_out, double *force_out)
+cmplx EOBFluxCalculateNewtonianMultipole(double x, double phi, int l, int m, cmplx param)
+{
+    cmplx out(1.0, 0.0);
+    return out;
+}
+
+#include "math_constants.h"
+
+
+/* Evaluate a polynomial with real coefficients at a complex point.
+ * Uses equation (3) in section 4.6.4 of [1]. Note that it is more
+ * efficient than Horner's method.
+ */
+CUDA_CALLABLE_MEMBER cmplx cevalpoly(double *coeffs, int degree,
+                                     cmplx z)
+{
+    int j;
+    double a = coeffs[0];
+    double b = coeffs[1];
+    double r = 2*z.real();
+    double s = z.real()*z.real() + z.imag()*z.imag();
+    double tmp;
+    for (j=2; j<=degree; j++)
+    {
+        tmp = b;
+        b = fma(-s, a, coeffs[j]);
+        a = fma(r, a, tmp);
+    }
+    return z*a + b;
+}
+
+CUDA_CALLABLE_MEMBER double loggamma_real(double x)
+{
+    if (x < 0.0) {
+        return CUDART_NAN;
+    } else {
+        return lgamma(x);
+    }
+}
+
+#define TWOPI 6.2831853071795864769252842  // 2*pi
+#define LOGPI 1.1447298858494001741434262  // log(pi)
+#define HLOG2PI 0.918938533204672742  // log(2*pi)/2
+#define SMALLX 7.0
+#define SMALLY 7.0
+#define TAYLOR_RADIUS 0.2
+
+
+/* Stirling series for log-Gamma.
+ *
+ * The coefficients are B[2*n]/(2*n*(2*n - 1)) where B[2*n] is the
+ * (2*n)th Bernoulli number. See (1.1) in [1].
+ */
+CUDA_CALLABLE_MEMBER cmplx loggamma_stirling(cmplx z)
+{
+    double coeffs[] = {
+        -2.955065359477124183e-2, 6.4102564102564102564e-3,
+        -1.9175269175269175269e-3, 8.4175084175084175084e-4,
+        -5.952380952380952381e-4, 7.9365079365079365079e-4,
+        -2.7777777777777777778e-3, 8.3333333333333333333e-2
+    };
+    cmplx rz = 1.0/z;
+    cmplx rzz = rz/z;
+    return (z - 0.5)*gcmplx::complex_log(z) - z + HLOG2PI + rz*cevalpoly(coeffs, 7, rzz);
+}
+
+/* Backward recurrence relation.
+ *
+ * See Proposition 2.2 in [1] and the Julia implementation [2].
+ */
+__noinline__ CUDA_CALLABLE_MEMBER cmplx loggamma_recurrence(cmplx z)
+{
+    int signflips = 0;
+    int sb = 0;
+    int nsb;
+    cmplx shiftprod = z;
+    z += 1.0;
+    while(z.real() <= SMALLX) {
+        shiftprod *= z;
+        nsb = signbit(shiftprod.imag());
+        if (nsb != 0 and sb == 0) {
+            signflips += 1;
+        }
+        sb = nsb;
+        z += 1.0;
+    }
+    cmplx ctemp(0.0, -signflips*TWOPI);
+    return loggamma_stirling(z) - complex_log(shiftprod) + ctemp;
+}
+
+/* Taylor series for log-Gamma around z = 1.
+ *
+ * It is
+ *
+ * loggamma(z + 1) = -gamma*z + zeta(2)*z**2/2 - zeta(3)*z**3/3 ...
+ *
+ * where gamma is the Euler-Mascheroni constant.
+ */
+CUDA_CALLABLE_MEMBER cmplx loggamma_taylor(cmplx z)
+{
+    double coeffs[] = {
+        -4.3478266053040259361e-2, 4.5454556293204669442e-2,
+        -4.7619070330142227991e-2, 5.000004769810169364e-2,
+        -5.2631679379616660734e-2, 5.5555767627403611102e-2,
+        -5.8823978658684582339e-2, 6.2500955141213040742e-2,
+        -6.6668705882420468033e-2, 7.1432946295361336059e-2,
+        -7.6932516411352191473e-2, 8.3353840546109004025e-2,
+        -9.0954017145829042233e-2, 1.0009945751278180853e-1,
+        -1.1133426586956469049e-1, 1.2550966952474304242e-1,
+        -1.4404989676884611812e-1, 1.6955717699740818995e-1,
+        -2.0738555102867398527e-1, 2.7058080842778454788e-1,
+        -4.0068563438653142847e-1, 8.2246703342411321824e-1,
+        -5.7721566490153286061e-1
+    };
+    z = z - 1.0;
+    return z*cevalpoly(coeffs, 22, z);
+}
+
+/* Compute log, paying special attention to accuracy around 1. We
+ * implement this ourselves because some systems (most notably the
+ * Travis CI machines) are weak in this regime.
+ */
+#define TOL_ZLOG1 2.220446092504131e-16
+CUDA_CALLABLE_MEMBER cmplx zlog1(cmplx z)
+{
+    cmplx coeff = -1.0;
+    cmplx res = 0.0;
+    if (abs(z - 1.0) > 0.1) {
+        return complex_log(z);  // complex log via Thrust
+    }
+    z = z - 1.0;
+    if (z == 0.0) {
+        return 0;
+    }
+    for (int n=1; n<17; n++)
+    {
+        coeff *= -z;
+        res += coeff / cmplx(n, 0);
+        if (abs(res/coeff) < TOL_ZLOG1) {
+            break;
+        }
+    }
+    return res;
+}
+
+// Compute sin(pi*z) for complex arguments
+CUDA_CALLABLE_MEMBER cmplx csinpi(cmplx z)
+{
+    double x = z.real();
+    double piy = M_PI*z.imag();
+    double abspiy = abs(piy);
+    double sinpix = sinpi(x);
+    double cospix = cospi(x);
+    double exphpiy, coshfac, sinhfac;
+    if (abspiy < 700) {
+        return cmplx(sinpix*cosh(piy), cospix*sinh(piy));
+    }
+    /* Have to be careful--sinh/cosh could overflow while cos/sin are
+     * small. At this large of values
+     *
+     * cosh(y) ~ exp(y)/2
+     * sinh(y) ~ sgn(y)*exp(y)/2
+     *
+     * so we can compute exp(y/2), scale by the right factor of sin/cos
+     * and then multiply by exp(y/2) to avoid overflow.
+     */
+    exphpiy = exp(abspiy/2.0);
+    if (exphpiy == CUDART_INF) {
+        if (sinpix == 0.0) {
+            // Preserve the sign of zero
+            coshfac = copysign(0.0, sinpix);
+        } else {
+            coshfac = copysign(CUDART_INF, sinpix);
+        }
+        if (cospix == 0.0) {
+            sinhfac = copysign(0.0, cospix);
+        } else {
+            sinhfac = copysign(CUDART_INF, cospix);
+        }
+        return cmplx(coshfac, sinhfac);
+    }
+    coshfac = 0.5*sinpix*exphpiy;
+    sinhfac = 0.5*cospix*exphpiy;
+    return cmplx(coshfac*exphpiy, sinhfac*exphpiy);
+}
+
+// Compute the principal branch of log-Gamma
+__noinline__ CUDA_CALLABLE_MEMBER cmplx loggamma(cmplx z)
+{
+    double tmp;
+    if (isnan(z.real()) || isnan(z.imag())) {
+        return cmplx(CUDART_NAN, CUDART_NAN);
+    } else if ((z.real() <= 0) && (z == floor(z.real()))) {
+        return cmplx(CUDART_NAN, CUDART_NAN);
+    } else if ((z.real() > SMALLX) || (fabs(z.imag()) > SMALLY)) {
+        return loggamma_stirling(z);
+    } else if (abs(z - 1.0) <= TAYLOR_RADIUS) {
+        return loggamma_taylor(z);
+    } else if (abs(z - 2.0) <= TAYLOR_RADIUS) {
+        // Recurrence relation and the Taylor series around 1
+        return zlog1(z - 1.0) + loggamma_taylor(z - 1.0);
+    } else if (z.real() < 0.1) {
+        // Reflection formula; see Proposition 3.1 in [1]
+        tmp = copysign(TWOPI, z.imag())*floor(0.5*z.real() + 0.25);
+        cmplx ctemp(LOGPI, tmp);
+        return ctemp - complex_log(csinpi(z)) - loggamma(1.0 - z);
+    } else if (signbit(z.imag()) == 0.0) {
+        // z.imag() >= 0 but is not -0.0
+        return loggamma_recurrence(z);
+    } else {
+        return conj(loggamma_recurrence(conj(z)));
+    }
+}
+
+CUDA_CALLABLE_MEMBER
+cmplx EOBGetSpinFactorizedWaveform(
+    double r,
+    double phi,
+    double pr,
+    double pphi,
+    double v,
+    double Hreal,
+    int l,
+    int m,
+    FacWaveformCoeffs hCoeffs,
+    cmplx newtonian_prefix,
+    double eta,
+    double vPhiInput,
+    double h22_calib
+
+)
+{
+    double Slm, deltalm, rholm;
+    cmplx auxflm, Tlm, rholmPwrl, hNewton;
+    cmplx I(0.0, 1.0);
+
+    double pp = pphi;
+
+    //  Non-Keplerian velocity
+    double vPhi, vPhi2;
+
+    //  Check our eta was sensible
+    if ((eta > 0.25) && (eta < 0.25 + 1e-4))
+        eta = 0.25;
+
+    double v2 = v * v;
+    double Omega = v2 * v;
+    double vh3 = Hreal * Omega;
+    double vh = pow(vh3, (1. / 3.));
+    double eulerlogxabs = euler_gamma + log(2.0 * m * v);
+    vPhi = r * pow(vPhiInput, (1.0 / 3.));
+    vPhi *= Omega;
+    vPhi2 = vPhi * vPhi;
+
+    // Calculate the newtonian multipole, 1st term in Eq.17, given by Eq.A1
+    hNewton = EOBFluxCalculateNewtonianMultipole(
+        vPhi2, phi, l, m, newtonian_prefix);
+
+    // Calculate the source term, 2nd term in Eq .17, given by Eq.A5
+    if (((l + m) % 2) == 0)
+        Slm = (Hreal * Hreal - 1.0) / (2.0 * eta) + 1.0;
+    else
+        Slm = v * pp;
+
+    // Calculate the Tail term, 3rd term in Eq .17, given by Eq.A6 * /
+    double k = m * Omega;
+    double hathatk = Hreal * k;
+
+    // This is just l !
+    double z2 = tgamma((double)(l + 1));
+    cmplx lnr1 = loggamma(l + 1.0 - 2.0 * hathatk * I);
+    double lnr1_abs = gcmplx::abs(lnr1);
+    double lnr1_arg = gcmplx::arg(lnr1);
+    Tlm = gcmplx::exp((PI * hathatk) + I * (2.0 * hathatk * log(4.0 * k / sqrt(M_E)))) * gcmplx::exp(lnr1);
+    Tlm /= z2;
+
+    // Calculate the residue phase and amplitude terms
+    //    deltalm is the 4th term in Eq .17,
+    //    delta 22 given by Eq.A15, others rholm is the 5th term in Eq .17, given by Eqs.A8 - A14 auxflm is a special part of the 5th term in Eq .17, given by Eq.A15
+    if (l == 2)
+    {
+        if (abs(m) == 2)
+        {
+            deltalm = vh3 * (hCoeffs.delta22vh3 + vh3 * (hCoeffs.delta22vh6 + vh * vh * (hCoeffs.delta22vh9 * vh))) + hCoeffs.delta22v5 * v * v2 * v2 + hCoeffs.delta22v6 * v2 * v2 * v2 + hCoeffs.delta22v8 * v2 * v2 * v2 * v2;
+
+            rholm = 1. + v2 * (hCoeffs.rho22v2 + v * (hCoeffs.rho22v3 + v * (hCoeffs.rho22v4 + v * (hCoeffs.rho22v5 + v * (hCoeffs.rho22v6 + hCoeffs.rho22v6l * eulerlogxabs + v * (hCoeffs.rho22v7 + v * (hCoeffs.rho22v8 + hCoeffs.rho22v8l * eulerlogxabs + (hCoeffs.rho22v10 + hCoeffs.rho22v10l * eulerlogxabs) * v2))))))) + h22_calib * pow(v, 12);
+        }
+
+        else if (abs(m) == 1)
+        {
+            deltalm = vh3 * (hCoeffs.delta21vh3 + vh3 * (hCoeffs.delta21vh6 + vh * (hCoeffs.delta21vh7 + (hCoeffs.delta21vh9) * vh * vh))) + hCoeffs.delta21v5 * v * v2 * v2 + hCoeffs.delta21v7 * v2 * v2 * v2 * v;
+            rholm = 1. + v * (hCoeffs.rho21v1 + v * (hCoeffs.rho21v2 + v * (hCoeffs.rho21v3 + v * (hCoeffs.rho21v4 + v * (hCoeffs.rho21v5 + v * (hCoeffs.rho21v6 + hCoeffs.rho21v6l * eulerlogxabs + v * (hCoeffs.rho21v7 + hCoeffs.rho21v7l * eulerlogxabs + v * (hCoeffs.rho21v8 + hCoeffs.rho21v8l * eulerlogxabs + (hCoeffs.rho21v10 + hCoeffs.rho21v10l * eulerlogxabs) * v2))))))));
+
+            // RC : This terms are in Eq.A11 in https : #journals.aps.org / prd / abstract / 10.1103 / PhysRevD .98.084028
+            auxflm = v * (hCoeffs.f21v1 + v2 * (hCoeffs.f21v3 + v * hCoeffs.f21v4 + v2 * (hCoeffs.f21v5 + v * hCoeffs.f21v6 + v2 * hCoeffs.f21v7c)));
+        }
+    }
+    else if (l == 3)
+    {
+        if (m == 3)
+        {
+            deltalm = vh3 * (hCoeffs.delta33vh3 + vh3 * (hCoeffs.delta33vh6 + hCoeffs.delta33vh9 * vh3)) + hCoeffs.delta33v5 * v * v2 * v2;
+            // RC : This terms are in Eq.A6 in https : #journals.aps.org / prd / abstract / 10.1103 / PhysRevD .98.084028
+            rholm = 1. + v2 * (hCoeffs.rho33v2 + v * (hCoeffs.rho33v3 + v * (hCoeffs.rho33v4 + v * (hCoeffs.rho33v5 + v * (hCoeffs.rho33v6 + hCoeffs.rho33v6l * eulerlogxabs + v * (hCoeffs.rho33v7 + v * (hCoeffs.rho33v8 + hCoeffs.rho33v8l * eulerlogxabs + v2 * (hCoeffs.rho33v10 + hCoeffs.rho33v10l * eulerlogxabs))))))));
+            // RC : This terms are in Eq.A10 in https : #journals.aps.org / prd / abstract / 10.1103 / PhysRevD .98.084028
+            auxflm = v * (v2 * (hCoeffs.f33v3 + v * (hCoeffs.f33v4 + v * (hCoeffs.f33v5 + v * hCoeffs.f33v6)))) + I * vh3 * vh3 * hCoeffs.f33vh6;
+        }
+        else if (m == 2)
+        {
+            deltalm = vh3 * (hCoeffs.delta32vh3 +
+                             vh * (hCoeffs.delta32vh4 +
+                                   vh * vh * (hCoeffs.delta32vh6 + hCoeffs.delta32vh9 * vh3)));
+            rholm = 1. + v * (hCoeffs.rho32v +
+                              v * (hCoeffs.rho32v2 +
+                                   v * (hCoeffs.rho32v3 +
+                                        v * (hCoeffs.rho32v4 +
+                                             v * (hCoeffs.rho32v5 +
+                                                  v * (hCoeffs.rho32v6 +
+                                                       hCoeffs.rho32v6l *
+                                                           eulerlogxabs +
+                                                       (hCoeffs.rho32v8 +
+                                                        hCoeffs.rho32v8l *
+                                                            eulerlogxabs) *
+                                                           v2))))));
+        }
+        else if (m == 1)
+        {
+            deltalm = vh3 * (hCoeffs.delta31vh3 + vh3 * (hCoeffs.delta31vh6 +
+                                                         vh *
+                                                             (hCoeffs.delta31vh7 +
+                                                              hCoeffs.delta31vh9 *
+                                                                  vh * vh))) +
+                      hCoeffs.delta31v5 * v * v2 * v2;
+            rholm = 1. + v2 * (hCoeffs.rho31v2 +
+                               v * (hCoeffs.rho31v3 +
+                                    v * (hCoeffs.rho31v4 +
+                                         v * (hCoeffs.rho31v5 +
+                                              v * (hCoeffs.rho31v6 +
+                                                   hCoeffs.rho31v6l * eulerlogxabs +
+                                                   v * (hCoeffs.rho31v7 +
+                                                        (hCoeffs.rho31v8 +
+                                                         hCoeffs.rho31v8l *
+                                                             eulerlogxabs) *
+                                                            v))))));
+            auxflm = v * v2 * hCoeffs.f31v3;
+        }
+    }
+    else if (l == 4)
+    {
+        if (m == 4)
+        {
+            // RC: This terms are in Eq.A15 in https:#journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+            deltalm = vh3 * (hCoeffs.delta44vh3 + vh3 * (hCoeffs.delta44vh6 + vh3 * hCoeffs.delta44vh9)) + hCoeffs.delta44v5 * v2 * v2 * v;
+            // RC: This terms are in Eq.A8 in https:#journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+            rholm = 1. + v2 * (hCoeffs.rho44v2 + v * (hCoeffs.rho44v3 + v * (hCoeffs.rho44v4 +
+                                                                             v *
+                                                                                 (hCoeffs.rho44v5 +
+                                                                                  v * (hCoeffs.rho44v6 +
+                                                                                       hCoeffs.rho44v6l *
+                                                                                           eulerlogxabs +
+                                                                                       v2 * (hCoeffs.rho44v8 + hCoeffs.rho44v8l * eulerlogxabs + v2 * (hCoeffs.rho44v10 + hCoeffs.rho44v10l * eulerlogxabs)))))));
+        }
+        else if (m == 3)
+        {
+            deltalm = vh3 * (hCoeffs.delta43vh3 + vh * (hCoeffs.delta43vh4 +
+                                                        hCoeffs.delta43vh6 *
+                                                            vh * vh));
+            rholm = 1. + v * (hCoeffs.rho43v +
+                              v * (hCoeffs.rho43v2 +
+                                   v2 * (hCoeffs.rho43v4 +
+                                         v * (hCoeffs.rho43v5 +
+                                              (hCoeffs.rho43v6 +
+                                               hCoeffs.rho43v6l * eulerlogxabs) *
+                                                  v))));
+            auxflm = v * hCoeffs.f43v;
+        }
+
+        else if (m == 2)
+        {
+            deltalm = vh3 * (hCoeffs.delta42vh3 + hCoeffs.delta42vh6 * vh3);
+            rholm = 1. + v2 * (hCoeffs.rho42v2 + v * (hCoeffs.rho42v3 +
+                                                      v * (hCoeffs.rho42v4 +
+                                                           v * (hCoeffs.rho42v5 +
+                                                                (hCoeffs.rho42v6 +
+                                                                 hCoeffs.rho42v6l *
+                                                                     eulerlogxabs) *
+                                                                    v))));
+        }
+        else if (m == 1)
+        {
+            deltalm = vh3 * (hCoeffs.delta41vh3 + vh * (hCoeffs.delta41vh4 +
+                                                        hCoeffs.delta41vh6 *
+                                                            vh * vh));
+            rholm = 1. + v * (hCoeffs.rho41v +
+                              v * (hCoeffs.rho41v2 +
+                                   v2 * (hCoeffs.rho41v4 +
+                                         v * (hCoeffs.rho41v5 +
+                                              (hCoeffs.rho41v6 +
+                                               hCoeffs.rho41v6l * eulerlogxabs) *
+                                                  v))));
+            auxflm = v * hCoeffs.f41v;
+        }
+    }
+    else if (l == 5)
+    {
+        if (m == 5)
+        {
+            // RC: This terms are in Eq.A16 in https:#journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+            deltalm = vh3 * (hCoeffs.delta55vh3 + vh3 * (hCoeffs.delta55vh6 + vh3 * (hCoeffs.delta55vh9))) + hCoeffs.delta55v5 * v2 * v2 * v;
+            // RC: This terms are in Eq.A9 in https:#journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+            rholm = 1. + v2 * (hCoeffs.rho55v2 +
+                               v * (hCoeffs.rho55v3 +
+                                    v * (hCoeffs.rho55v4 +
+                                         v * (hCoeffs.rho55v5 +
+                                              v * (hCoeffs.rho55v6 + hCoeffs.rho55v6l * eulerlogxabs +
+                                                   v2 * (hCoeffs.rho55v8 + hCoeffs.rho55v8l * eulerlogxabs +
+                                                         v2 * (hCoeffs.rho55v10 + hCoeffs.rho55v10l * eulerlogxabs)))))));
+            // RC: This terms are in Eq.A12 in https:#journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+            auxflm = v2 * v * (hCoeffs.f55v3 + v * (hCoeffs.f55v4 + v * (hCoeffs.f55v5c)));
+        }
+        else if (m == 4)
+        {
+            deltalm = vh3 * (hCoeffs.delta54vh3 + hCoeffs.delta54vh4 * vh);
+            rholm = 1. + v2 * (hCoeffs.rho54v2 + v * (hCoeffs.rho54v3 + hCoeffs.rho54v4 * v));
+        }
+        else if (m == 3)
+        {
+            deltalm = hCoeffs.delta53vh3 * vh3;
+            rholm = 1. + v2 * (hCoeffs.rho53v2 + v * (hCoeffs.rho53v3 +
+                                                      v * (hCoeffs.rho53v4 +
+                                                           hCoeffs.rho53v5 * v)));
+        }
+
+        else if (m == 2)
+        {
+            deltalm = vh3 * (hCoeffs.delta52vh3 + hCoeffs.delta52vh4 * vh);
+            rholm = 1. + v2 * (hCoeffs.rho52v2 + v * (hCoeffs.rho52v3 + hCoeffs.rho52v4 * v));
+        }
+        else if (m == 1)
+        {
+            deltalm = hCoeffs.delta51vh3 *vh3;
+            rholm = 1. + v2 * (hCoeffs.rho51v2 + v * (hCoeffs.rho51v3 +
+                                                                    v * (hCoeffs.rho51v4 +
+                                                                         hCoeffs.rho51v5 * v)));
+        }
+    }
+    else if (l == 6)
+    {
+        if (m == 6)
+        {
+            deltalm = hCoeffs.delta66vh3 * vh3;
+            rholm = 1. + v2 * (hCoeffs.rho66v2 + v * (hCoeffs.rho66v3 + hCoeffs.rho66v4 * v));
+        }
+        else if (m == 5)
+        {
+            deltalm = hCoeffs.delta65vh3 * vh3;
+            rholm = 1. + v2 * (hCoeffs.rho65v2 + hCoeffs.rho65v3 * v);
+        }
+        else if (m == 4)
+        {
+            deltalm = hCoeffs.delta64vh3 * vh3;
+            rholm = 1. + v2 * (hCoeffs.rho64v2 + v * (hCoeffs.rho64v3 + hCoeffs.rho64v4 * v));
+        }
+        else if (m == 3)
+        {
+            deltalm = hCoeffs.delta63vh3 * vh3;
+            rholm = 1. + v2 * (hCoeffs.rho63v2 + hCoeffs.rho63v3 * v);
+        }
+
+        else if (m == 2)
+        {
+            deltalm = hCoeffs.delta62vh3 * vh3;
+            rholm = 1. + v2 * (hCoeffs.rho62v2 + v * (hCoeffs.rho62v3 + hCoeffs.rho62v4 * v));
+        }
+        else if (m == 1)
+        {
+            deltalm = hCoeffs.delta61vh3 * vh3;
+            rholm = 1. + v2 * (hCoeffs.rho61v2 + hCoeffs.rho61v3 * v);
+        }
+    }
+
+    if (l == 7)
+    {
+        if (m == 7)
+        {
+            deltalm = hCoeffs.delta77vh3 * vh3;
+            rholm = 1. + v2 * (hCoeffs.rho77v2 + hCoeffs.rho77v3 * v);
+        }
+        else if (m == 6)
+        {
+            deltalm = 0.0;
+            rholm = 1. + hCoeffs.rho76v2 * v2;
+        }
+        else if (m == 5)
+        {
+            deltalm = hCoeffs.delta75vh3 * vh3;
+            rholm = 1. + v2 * (hCoeffs.rho75v2 + hCoeffs.rho75v3 * v);
+        }
+        else if (m == 4)
+        {
+            deltalm = 0.0;
+            rholm = 1. + hCoeffs.rho74v2 * v2;
+        }
+        else if (m == 3)
+        {
+            deltalm = hCoeffs.delta73vh3 * vh3;
+            rholm = 1. + v2 * (hCoeffs.rho73v2 + hCoeffs.rho73v3 * v);
+        }
+
+        else if (m == 2)
+        {
+            deltalm = 0.0;
+            rholm = 1. + hCoeffs.rho72v2 * v2;
+        }
+        else if (m == 1)
+        {
+            deltalm = hCoeffs.delta71vh3 * vh3;
+            rholm = 1. + v2 * (hCoeffs.rho71v2 + hCoeffs.rho71v3 * v);
+        }
+    }
+
+    if (l == 8)
+    {
+        if (m == 8)
+        {
+            deltalm = 0.0;
+            rholm = 1. + hCoeffs.rho88v2 * v2;
+        }
+        else if (m == 7)
+        {
+            deltalm = 0.0;
+            rholm = 1. + hCoeffs.rho87v2 * v2;
+        }
+        else if (m == 6)
+        {
+            deltalm = 0.0;
+            rholm = 1. + hCoeffs.rho86v2 * v2;
+        }
+        else if (m == 5)
+        {
+            deltalm = 0.0;
+            rholm = 1. + hCoeffs.rho85v2 * v2;
+        }
+        else if (m == 4)
+        {
+            deltalm = 0.0;
+            rholm = 1. + hCoeffs.rho84v2 * v2;
+        }
+        else if (m == 3)
+        {
+            deltalm = 0.0;
+            rholm = 1. + hCoeffs.rho83v2 * v2;
+        }
+
+        else if (m == 2)
+        {
+            deltalm = 0.0;
+            rholm = 1. + hCoeffs.rho82v2 * v2;
+        }
+        else if (m == 1)
+        {
+            deltalm = 0.0;
+            rholm = 1. + hCoeffs.rho81v2 * v2;
+        }
+    }
+    // Raise rholm to the lth power
+    // rholmPwrl = 1.0
+    // for i in range(l):
+    // rholmPwrl *= rholm
+    rholmPwrl = pow(rholm, l);
+
+    if ((eta == 0.25) && (m % 2))
+        rholmPwrl = auxflm;
+    else
+        rholmPwrl += auxflm;
+
+    cmplx hlm = Tlm * gcmplx::exp(I * deltalm) * Slm * rholmPwrl;
+    hlm *= hNewton;
+    return hlm;
+}
+
+CUDA_CALLABLE_MEMBER
+cmplx EOBFluxCalculateNewtonianMultipoleAbs(double x, double phi, int l, int m, cmplx param)
+{
+    cmplx out(1.0, 0.0);
+    return out;
+}
+
+#include "math.h"
+
+CUDA_CALLABLE_MEMBER
+cmplx EOBFluxGetSpinFactorizedWaveform(double r, double phi, double pp, double v, double Hreal, int l, int m, FacWaveformCoeffs hcoeffs,
+                                       cmplx newtonian_prefix, double eta, double vPhi, double vPhi2, double Omega, double v2, double h22_calib)
+{
+    cmplx auxflm = 0.0;
+
+        // Check our eta was sensible
+        if ((eta > 0.25) && (eta < 0.25 + 1e-4)) eta = 0.25;
+
+    double eulerlogxabs = euler_gamma + log(2.0 * m * v);
+
+    // Calculate the newtonian multipole, 1st term in Eq. 17, given by Eq. A1
+    cmplx hNewton = EOBFluxCalculateNewtonianMultipoleAbs(
+        vPhi2, M_PI_2, l, m, newtonian_prefix);
+    double Slm = 0.0;
+    // Calculate the source term, 2nd term in Eq. 17, given by Eq. A5
+    if (((l + m) % 2) == 0)
+        Slm = (Hreal * Hreal - 1.0) / (2.0 * eta) + 1.0;
+    else
+        Slm = v * pp;
+
+    // Calculate the absolute value of the Tail term,
+    // 3rd term in Eq. 17, given by Eq. A6, and Eq. (42) of
+    // http://arxiv.org/pdf/1212.4357.pdf
+    // Here we are explicitly computing T_lm and not |T_lm|^{2}
+    // These are defined right after Eq(23)
+    double k = m * Omega;
+    double hathatk = Hreal * k;
+    double hathatksq4 = 4.0 * hathatk * hathatk;
+    double hathatk4pi = 4.0 * PI * hathatk;
+
+    // This is just l!
+    double z2 = tgamma((double)(l + 1));
+    // factorial(l, exact=True)
+    // Calculating the prefactor of Tlm, outside the multiple product
+    double Tlmprefac = sqrt(hathatk4pi / (1.0 - exp(-hathatk4pi))) / z2;
+    double Tlmprodfac = 1.0;
+    // Calculating the multiple product factor
+    for (int i = 1; i < l + 1; i += 1)
+    {
+        Tlmprodfac *= hathatksq4 + pow(i, 2);
+    }
+
+    double Tlm = Tlmprefac * sqrt(Tlmprodfac);
+    double rholm;
+    // Calculate the residue phase and amplitude terms
+    // deltalm is the 4th term in Eq. 17, delta 22 given by Eq. A15, others
+    // rholm is the 5th term in Eq. 17, given by Eqs. A8 - A14
+    // auxflm is a special part of the 5th term in Eq. 17, given by Eq. A15
+    // Actual values of the coefficients are defined in the next function of this file
+
+    if (l == 2)
+    {
+        if (m == 2)
+        {
+            // printf("Inside: %d\n",h22_calib)
+            rholm = 1.0 + v2 * (hcoeffs.rho22v2 + v * (hcoeffs.rho22v3 + v * (hcoeffs.rho22v4 + v * (hcoeffs.rho22v5 + v * (hcoeffs.rho22v6 + hcoeffs.rho22v6l * eulerlogxabs + v * (hcoeffs.rho22v7 + v * (hcoeffs.rho22v8 + hcoeffs.rho22v8l * eulerlogxabs + (hcoeffs.rho22v10 + hcoeffs.rho22v10l * eulerlogxabs) * v2))))))) + h22_calib * pow(v, 12);
+        }
+        else if (m == 1)
+        {
+            rholm = 1.0 + v * (hcoeffs.rho21v1 + v * (hcoeffs.rho21v2 + v * (hcoeffs.rho21v3 + v * (hcoeffs.rho21v4 + v * (hcoeffs.rho21v5 + v * (hcoeffs.rho21v6 + hcoeffs.rho21v6l * eulerlogxabs + v * (hcoeffs.rho21v7 + hcoeffs.rho21v7l * eulerlogxabs + v * (hcoeffs.rho21v8 + hcoeffs.rho21v8l * eulerlogxabs + (hcoeffs.rho21v10 + hcoeffs.rho21v10l * eulerlogxabs) * v2))))))));
+            auxflm = v * hcoeffs.f21v1 + v2 * v * hcoeffs.f21v3;
+        }
+    }
+    else if (l == 3)
+    {
+        if (m == 3)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho33v2 + v * (hcoeffs.rho33v3 + v * (hcoeffs.rho33v4 + v * (hcoeffs.rho33v5 + v * (hcoeffs.rho33v6 + hcoeffs.rho33v6l * eulerlogxabs + v * (hcoeffs.rho33v7 + (hcoeffs.rho33v8 + hcoeffs.rho33v8l * eulerlogxabs) * v))))));
+            auxflm = v * v2 * hcoeffs.f33v3;
+        }
+        else if (m == 2)
+        {
+            rholm = 1.0 + v * (hcoeffs.rho32v + v * (hcoeffs.rho32v2 + v * (hcoeffs.rho32v3 + v * (hcoeffs.rho32v4 + v * (hcoeffs.rho32v5 + v * (hcoeffs.rho32v6 + hcoeffs.rho32v6l * eulerlogxabs + (hcoeffs.rho32v8 + hcoeffs.rho32v8l * eulerlogxabs) * v2))))));
+        }
+        else if (m == 1)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho31v2 + v * (hcoeffs.rho31v3 + v * (hcoeffs.rho31v4 + v * (hcoeffs.rho31v5 + v * (hcoeffs.rho31v6 + hcoeffs.rho31v6l * eulerlogxabs + v * (hcoeffs.rho31v7 + (hcoeffs.rho31v8 + hcoeffs.rho31v8l * eulerlogxabs) * v))))));
+            auxflm = v * v2 * hcoeffs.f31v3;
+        }
+    }
+    else if (l == 4)
+    {
+        if (m == 4)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho44v2 + v * (hcoeffs.rho44v3 + v * (hcoeffs.rho44v4 + v * (hcoeffs.rho44v5 + (hcoeffs.rho44v6 + hcoeffs.rho44v6l * eulerlogxabs) * v))));
+        }
+        else if (m == 3)
+        {
+            rholm = 1.0 + v * (hcoeffs.rho43v + v * (hcoeffs.rho43v2 + v2 * (hcoeffs.rho43v4 + v * (hcoeffs.rho43v5 + (hcoeffs.rho43v6 + hcoeffs.rho43v6l * eulerlogxabs) * v))));
+            auxflm = v * hcoeffs.f43v;
+        }
+        else if (m == 2)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho42v2 + v * (hcoeffs.rho42v3 + v * (hcoeffs.rho42v4 + v * (hcoeffs.rho42v5 + (hcoeffs.rho42v6 + hcoeffs.rho42v6l * eulerlogxabs) * v))));
+        }
+        else if (m == 1)
+        {
+            rholm = 1.0 + v * (hcoeffs.rho41v + v * (hcoeffs.rho41v2 + v2 * (hcoeffs.rho41v4 + v * (hcoeffs.rho41v5 + (hcoeffs.rho41v6 + hcoeffs.rho41v6l * eulerlogxabs) * v))));
+            auxflm = v * hcoeffs.f41v;
+        }
+    }
+    else if (l == 5)
+    {
+        if (m == 5)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho55v2 + v * (hcoeffs.rho55v3 + v * (hcoeffs.rho55v4 + v * (hcoeffs.rho55v5 + hcoeffs.rho55v6 * v))));
+        }
+        else if (m == 4)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho54v2 + v * (hcoeffs.rho54v3 + hcoeffs.rho54v4 * v));
+        }
+        else if (m == 3)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho53v2 + v * (hcoeffs.rho53v3 + v * (hcoeffs.rho53v4 + hcoeffs.rho53v5 * v)));
+        }
+        else if (m == 2)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho52v2 + v * (hcoeffs.rho52v3 + hcoeffs.rho52v4 * v));
+        }
+        else if (m == 1)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho51v2 + v * (hcoeffs.rho51v3 + v * (hcoeffs.rho51v4 + hcoeffs.rho51v5 * v)));
+        }
+    }
+    else if (l == 6)
+    {
+        if (m == 6)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho66v2 + v * (hcoeffs.rho66v3 + hcoeffs.rho66v4 * v));
+        }
+        else if (m == 5)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho65v2 + hcoeffs.rho65v3 * v);
+        }
+        else if (m == 4)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho64v2 + v * (hcoeffs.rho64v3 + hcoeffs.rho64v4 * v));
+        }
+        else if (m == 3)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho63v2 + hcoeffs.rho63v3 * v);
+        }
+        else if (m == 2)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho62v2 + v * (hcoeffs.rho62v3 + hcoeffs.rho62v4 * v));
+        }
+        else if (m == 1)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho61v2 + hcoeffs.rho61v3 * v);
+        }
+    }
+    else if (l == 7)
+    {
+        if (m == 7)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho77v2 + hcoeffs.rho77v3 * v);
+        }
+        else if (m == 6)
+        {
+            rholm = 1.0 + hcoeffs.rho76v2 * v2;
+        }
+        else if (m == 5)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho75v2 + hcoeffs.rho75v3 * v);
+        }
+        else if (m == 4)
+        {
+            rholm = 1.0 + hcoeffs.rho74v2 * v2;
+        }
+        else if (m == 3)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho73v2 + hcoeffs.rho73v3 * v);
+        }
+        else if (m == 2)
+        {
+            rholm = 1.0 + hcoeffs.rho72v2 * v2;
+        }
+        else if (m == 1)
+        {
+            rholm = 1.0 + v2 * (hcoeffs.rho71v2 + hcoeffs.rho71v3 * v);
+        }
+    }
+
+    else if (l == 8)
+    {
+        if (m == 8)
+        {
+            rholm = 1.0 + hcoeffs.rho88v2 * v2;
+        }
+        else if (m == 7)
+            {
+                rholm = 1.0 + hcoeffs.rho87v2 * v2;
+            }
+        else if (m == 6)
+            {
+                rholm = 1.0 + hcoeffs.rho86v2 * v2;
+            }
+        else if (m == 5)
+            {
+                rholm = 1.0 + hcoeffs.rho85v2 * v2;
+            }
+        else if (m == 4)
+            {
+                rholm = 1.0 + hcoeffs.rho84v2 * v2;
+            }
+        else if (m == 3)
+            {
+                rholm = 1.0 + hcoeffs.rho83v2 * v2;
+            }
+        else if (m == 2)
+            {
+                rholm = 1.0 + hcoeffs.rho82v2 * v2;
+            }
+        else if (m == 1)
+            {
+                rholm = 1.0 + hcoeffs.rho81v2 * v2;
+            }
+    }
+    cmplx rholmPwrl(1.0, 0.0);
+
+    rholmPwrl = pow(rholm, l);
+
+    if ((eta == 0.25) && (m % 2)) rholmPwrl = auxflm;
+    else rholmPwrl += auxflm;
+
+    // Put all factors in Eq. 17 together
+    cmplx hlm = Tlm * Slm * rholmPwrl;
+    //* Slm * rholmPwrl
+    hlm *= hNewton;
+    return hlm;
+}
+
+
+
+CUDA_CALLABLE_MEMBER
+void EOBCalcSpinFacWaveformCoefficients(
+    FacWaveformCoeffs *coeffs, int use_hm, double m1, double m2, double eta, double a, double chiS, double chiA)
+{
+
+    double eta2 = eta * eta;
+    double eta3 = eta2 * eta;
+    double dM2 = 1.0 - 4.0 * eta;
+    double chiA2 = chiA * chiA;
+    double chiS2 = chiS * chiS;
+    double chiA3 = chiA2 * chiA;
+    double chiS3 = chiS2 * chiS;
+    // Check that deltaM has a reasonable value
+    if ((dM2 < 0.0) && (dM2 > -1e-4))
+        dM2 = 0.0;
+
+    double dM = sqrt(dM2);
+    if (m1 < m2) dM = -dM;
+
+    double aDelta = 0.0;
+    double a2 = a * a;
+    double a3 = a2 * a;
+
+    double m1Plus3eta = -1.0 + 3.0 * eta;
+    double m1Plus3eta2 = m1Plus3eta * m1Plus3eta;
+    double m1Plus3eta3 = m1Plus3eta * m1Plus3eta2;
+
+    // l = 2, Eqs. A8a and A8b for rho, Eq. A15a for f,
+    // Eqs. 20 and 21 of DIN and Eqs. 27a and 27b of PBFRT for delta
+
+    coeffs->delta22vh3 = 7.0 / 3.0;
+    coeffs->delta22vh6 = (-4.0 * aDelta) / 3.0 + (428.0 * PI) / 105.0;
+    // See https://dcc.ligo.org/T1600383
+
+    coeffs->delta22vh6 = (-4.0 / 3.0 * (dM * chiA + chiS * (1 - 2 * eta)) + (428.0 * PI) / 105.0);
+
+    coeffs->delta22v8 = (20.0 * aDelta) / 63.0;
+    coeffs->delta22vh9 = -2203.0 / 81.0 + (1712.0 * PI * PI) / 315.0;
+    coeffs->delta22v5 = -24.0 * eta;
+    coeffs->delta22v6 = 0.0;
+
+    coeffs->rho22v2 = -43.0 / 42.0 + (55.0 * eta) / 84.0;
+    coeffs->rho22v3 = (-2.0 * (chiS + chiA * dM - chiS * eta)) / 3.0;
+
+    coeffs->rho22v4 = (-20555.0 / 10584.0 + 0.5 * (chiS + chiA * dM) * (chiS + chiA * dM) - (33025.0 * eta) / 21168.0 + (19583.0 * eta2) / 42336.0);
+
+    coeffs->rho22v5 = (-34.0 / 21.0 + 49.0 * eta / 18.0 + 209.0 * eta2 / 126.0) * chiS + (-34.0 / 21.0 - 19.0 * eta / 42.0) * dM * chiA;
+
+    coeffs->rho22v6 = (1556919113.0 / 122245200.0 + (89.0 * a2) / 252.0 - (48993925.0 * eta) / 9779616.0 - (6292061.0 * eta2) / 3259872.0 + (10620745.0 * eta3) / 39118464.0 + (41.0 * eta * PI * PI) / 192.0);
+    coeffs->rho22v6l = -428.0 / 105.0;
+
+    // See https://dcc.ligo.org/T1600383
+    coeffs->rho22v7 = (a3 / 3.0 + chiA * dM * (18733.0 / 15876.0 + (50140.0 * eta) / 3969.0 + (97865.0 * eta2) / 63504.0) + chiS * (18733.0 / 15876.0 + (74749.0 * eta) / 5292.0 - (245717.0 * eta2) / 63504.0 + (50803.0 * eta3) / 63504.0));
+
+    coeffs->rho22v8 = (-387216563023.0 / 160190110080.0 +
+                       (18353.0 * a2) / 21168.0 - a2 * a2 / 8.0);
+
+    coeffs->rho22v8l = 9202.0 / 2205.0;
+    coeffs->rho22v10 = -16094530514677.0 / 533967033600.0;
+    coeffs->rho22v10l = 439877.0 / 55566.0;
+
+    // RC the HM model does not include spinning test mass terms in the higher-order modes
+    if (use_hm)
+    {
+        a = 0.;
+        a2 = 0.;
+        a3 = 0.;
+    }
+
+    // RC: The delta coefficient before were put inside the if(dM2). This is wrong.
+    // it didn't effect the models before because this function is used only to
+    // calculate the 22 mode and the flux of the other modes, but for the flux
+    // you only need |h_lm|. This error was present in all the modes, and now is fixed.
+    // Is not a problem for the 22 mode because there is no if(dM2) for the 22
+    coeffs->delta21vh3 = 2.0 / 3.0;
+    coeffs->delta21vh6 = (-17.0 * aDelta) / 35.0 + (107.0 * PI) / 105.0;
+    coeffs->delta21vh7 = (3.0 * aDelta * aDelta) / 140.0;
+    coeffs->delta21vh9 = -272.0 / 81.0 + (214.0 * PI * PI) / 315.0;
+    coeffs->delta21v5 = -493.0 * eta / 42.0;
+    if (dM2)
+    {
+        coeffs->rho21v1 = 0.0;
+        coeffs->rho21v2 = -59.0 / 56 + (23.0 * eta) / 84.0;
+        coeffs->rho21v3 = 0.0;
+
+        coeffs->rho21v4 = (-47009.0 / 56448.0 - (865.0 * a2) / 1792.0 - (405.0 * a2 * a2) / 2048.0 - (10993.0 * eta) / 14112.0 + (617.0 * eta2) / 4704.0);
+        coeffs->rho21v5 = ((-98635.0 * a) / 75264.0 + (2031.0 * a * a2) / 7168.0 - (1701.0 * a2 * a3) / 8192.0);
+        coeffs->rho21v6 = (7613184941.0 / 2607897600.0 + (9032393.0 * a2) / 1806336.0 + (3897.0 * a2 * a2) / 16384.0 - (15309.0 * a3 * a3) / 65536.0);
+        coeffs->rho21v6l = -107.0 / 105.0;
+        coeffs->rho21v7 = ((-3859374457.0 * a) / 1159065600.0 - (55169.0 * a3) / 16384.0 + (18603.0 * a2 * a3) / 65536.0 - (72171.0 * a2 * a2 * a3) / 262144.0);
+        coeffs->rho21v7l = 107.0 * a / 140.0;
+        coeffs->rho21v8 = -1168617463883.0 / 911303737344.0;
+        coeffs->rho21v8l = 6313.0 / 5880.0;
+        coeffs->rho21v10 = -63735873771463.0 / 16569158860800.0;
+        coeffs->rho21v10l = 5029963.0 / 5927040.0;
+
+        coeffs->f21v1 = (-3.0 * (chiS + chiA / dM)) / (2.0);
+
+        coeffs->f21v3 = ((
+                             chiS * dM * (427.0 + 79.0 * eta) + chiA * (147.0 + 280.0 * dM * dM + 1251.0 * eta)) /
+                         84.0 / dM);
+        // RC: New terms for SEOBNRv4HM, they are put to zero if use_hm == 0
+        coeffs->f21v4 = 0.0;
+        coeffs->f21v5 = 0.0;
+        coeffs->f21v6 = 0.0;
+        coeffs->f21v7c = 0.;
+        if (use_hm)
+        {
+            // RC: This terms are in Eq.A11 in https://journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+
+            coeffs->f21v4 = ((-3.0 - 2.0 * eta) * chiA2 + (-3.0 + eta / 2.0) * chiS2 + (-6.0 + 21.0 * eta / 2.0) * chiS * chiA / dM);
+            coeffs->f21v5 = ((3.0 / 4.0 - 3.0 * eta) * chiA3 / dM + (-81.0 / 16.0 + 1709.0 * eta / 1008.0 + 613.0 * eta2 / 1008.0 + (9.0 / 4.0 - 3 * eta) * chiA2) * chiS + 3.0 / 4.0 * chiS3 + (-81.0 / 16.0 - 703.0 * eta2 / 112.0 + 8797.0 * eta / 1008.0 + (9.0 / 4.0 - 6.0 * eta) * chiS2) * chiA / dM);
+            coeffs->f21v6 = ((4163.0 / 252.0 - 9287.0 * eta / 1008.0 - 85.0 * eta2 / 112.0) * chiA2 + (4163.0 / 252.0 - 2633.0 * eta / 1008.0 + 461.0 * eta2 / 1008.0) * chiS2 + (4163.0 / 126.0 - 1636.0 * eta / 21.0 + 1088.0 * eta2 / 63.0) * chiS * chiA / dM);
+            coeffs->f21v7c = 0.0; // RC: this is the calibration parameter which is initially set to 0
+        }
+    }
+    else
+    {
+        coeffs->f21v1 = -3.0 * chiA / 2.0;
+        coeffs->f21v3 = (chiS * dM * (427.0 + 79.0 * eta) + chiA * (147.0 + 280.0 * dM * dM + 1251.0 * eta)) / 84.0;
+        // New terms for SEOBNRv4HM, they are put to zero if use_hm == 0
+        coeffs->f21v4 = 0.0;
+        coeffs->f21v5 = 0.0;
+        coeffs->f21v6 = 0.0;
+        if (use_hm)
+        {
+            // RC: This terms are in Eq.A11 in https://journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+            coeffs->f21v4 = (-6 + 21 * eta / 2.0) * chiS * chiA;
+            coeffs->f21v5 = (3.0 / 4.0 - 3.0 * eta) * chiA3 + (-81.0 / 16.0 - 703.0 * eta2 / 112.0 + 8797.0 * eta / 1008.0 + (9.0 / 4.0 - 6.0 * eta) * chiS2) *chiA;
+            coeffs->f21v6 = ((4163.0 / 126.0 - 1636.0 * eta / 21.0 + 1088.0 * eta2 / 63.0) * chiS * chiA);
+        }
+    }
+
+    // l = 3, Eqs. A9a - A9c for rho, Eqs. A15b and A15c for f,
+    // Eqs. 22 - 24 of DIN and Eqs. 27c - 27e of PBFRT for delta
+    coeffs->delta33vh3 = 13.0 / 10.0;
+    coeffs->delta33vh6 = (-81.0 * aDelta) / 20.0 + (39.0 * PI) / 7.0;
+    coeffs->delta33vh9 = -227827.0 / 3000.0 + (78.0 * PI * PI) / 7.0;
+    coeffs->delta33v5 = -80897.0 * eta / 2430.0;
+    if (dM2)
+    {
+        coeffs->rho33v2 = -7.0 / 6.0 + (2.0 * eta) / 3.0;
+        coeffs->rho33v3 = 0.0;
+        coeffs->rho33v4 = (-6719.0 / 3960.0 + a2 / 2.0 - (1861.0 * eta) / 990.0 + (149.0 * eta2) / 330.0);
+        coeffs->rho33v5 = (-4.0 * a) / 3.0;
+        coeffs->rho33v6 = 3203101567.0 / 227026800.0 + (5.0 * a2) / 36.0;
+        coeffs->rho33v6l = -26.0 / 7.0;
+        coeffs->rho33v7 = (5297.0 * a) / 2970.0 + a * a2 / 3.0;
+        coeffs->rho33v8 = -57566572157.0 / 8562153600.0;
+        coeffs->rho33v8l = 13.0 / 3.0;
+        coeffs->rho33v10 = 0.;
+        coeffs->rho33v10l = 0.;
+        if (use_hm)
+        {
+            // RC: This terms are in Eq.A6 in https://journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+            coeffs->rho33v6 = (3203101567.0 / 227026800.0 + (5.0 * a2) / 36.0 + (-129509.0 / 25740.0 + 41.0 / 192.0 * PI * PI) * eta - 274621.0 / 154440.0 * eta2 + 12011.0 / 46332.0 * eta3);
+            coeffs->rho33v10 = -903823148417327.0 / 30566888352000.0;
+            coeffs->rho33v10l = 87347.0 / 13860.0;
+        }
+        coeffs->f33v3 = (chiS * dM * (-4.0 + 5.0 * eta) + chiA * (-4.0 + 19.0 * eta)) / (2.0 * dM);
+        coeffs->f33v4 = 0.;
+        coeffs->f33v5 = 0.;
+        coeffs->f33v6 = 0.;
+        coeffs->f33vh6 = 0.;
+        if (use_hm)
+        {
+            // RC: This terms are in Eq.A10 in https://journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+            coeffs->f33v4 = (3.0 / 2.0 * chiS2 * dM + (3.0 - 12 * eta) * chiA * chiS + dM * (3.0 / 2.0 - 6.0 * eta) * chiA2) / (dM);
+            coeffs->f33v5 = (dM * (241.0 / 30.0 * eta2 + 11.0 / 20.0 * eta + 2.0 / 3.0) * chiS + (407.0 / 30.0 * eta2 - 593.0 / 60.0 * eta + 2.0 / 3.0) * chiA) / (dM);
+            coeffs->f33v6 = (dM * (6.0 * eta2 - 27.0 / 2.0 * eta - 7.0 / 4.0) * chiS2 + (44.0 * eta2 - 1.0 * eta - 7.0 / 2.0) * chiA * chiS + dM * (-12 * eta2 + 11.0 / 2.0 * eta - 7.0 / 4.0) * chiA2) / dM;
+            coeffs->f33vh6 = (dM * (593.0 / 108.0 * eta - 81.0 / 20.0) * chiS + (7339.0 / 540.0 * eta - 81.0 / 20.0) * chiA) / (dM);
+        }
+    }
+    else
+    {
+        coeffs->f33v3 = chiA * 3.0 / 8.0;
+        coeffs->f33v4 = 0.;
+        coeffs->f33v5 = 0.;
+        coeffs->f33v6 = 0.;
+        coeffs->f33vh6 = 0.;
+        if (use_hm)
+        {
+            // RC: This terms are in Eq.A10 in https://journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+            coeffs->f33v4 = (3.0 - 12 * eta) * chiA * chiS;
+            coeffs->f33v5 = (407.0 / 30.0 * eta2 - 593.0 / 60.0 * eta + 2.0 / 3.0) * chiA;
+            coeffs->f33v6 = (44.0 * eta2 - 1.0 * eta - 7.0 / 2.0) * chiA * chiS;
+            coeffs->f33vh6 = (7339.0 / 540.0 * eta - 81.0 / 20.0) * chiA;
+        }
+    }
+    coeffs->delta32vh3 = (10.0 + 33.0 * eta) / (-15.0 * m1Plus3eta);
+    coeffs->delta32vh4 = 4.0 * aDelta;
+    coeffs->delta32vh6 = (-136.0 * aDelta) / 45.0 + (52.0 * PI) / 21.0;
+    coeffs->delta32vh9 = -9112.0 / 405.0 + (208.0 * PI * PI) / 63.0;
+
+    coeffs->rho32v = (4.0 * chiS * eta) / (-3.0 * m1Plus3eta);
+    coeffs->rho32v2 = (328.0 - 1115.0 * eta + 320.0 * eta2) / (270.0 * m1Plus3eta);
+
+    coeffs->rho32v3 = (2.0 * (45.0 * a * m1Plus3eta3 - a * eta * (328.0 - 2099.0 * eta + 5.0 * (733.0 + 20.0 * a2) * eta2 - 960.0 * eta3))) / (405.0 * m1Plus3eta3);
+    coeffs->rho32v3 = 2.0 / 9.0 * a;
+    coeffs->rho32v4 = a2 / 3.0 + (-1444528.0 + 8050045.0 * eta - 4725605.0 * eta2 - 20338960.0 * eta3 + 3085640.0 * eta2 * eta2) / (1603800.0 * m1Plus3eta2);
+    coeffs->rho32v5 = (-2788.0 * a) / 1215.0;
+    coeffs->rho32v6 = 5849948554.0 / 940355325.0 + (488.0 * a2) / 405.0;
+    coeffs->rho32v6l = -104.0 / 63.0;
+    coeffs->rho32v8 = -10607269449358.0 / 3072140846775.0;
+    coeffs->rho32v8l = 17056.0 / 8505.0;
+    coeffs->delta31vh3 = 13.0 / 30.0;
+    coeffs->delta31vh6 = (61.0 * aDelta) / 20.0 + (13.0 * PI) / 21.0;
+    coeffs->delta31vh7 = (-24.0 * aDelta * aDelta) / 5.0;
+    coeffs->delta31vh9 = -227827.0 / 81000.0 + (26.0 * PI * PI) / 63.0;
+    coeffs->delta31v5 = -17.0 * eta / 10.0;
+    if (dM2)
+    {
+
+        coeffs->rho31v2 = -13.0 / 18.0 - (2.0 * eta) / 9.0;
+        coeffs->rho31v3 = 0.0;
+        coeffs->rho31v4 = (101.0 / 7128.0 - (5.0 * a2) / 6.0 - (1685.0 * eta) / 1782.0 - (829.0 * eta2) / 1782.0);
+        coeffs->rho31v5 = (4.0 * a) / 9.0;
+        coeffs->rho31v6 = 11706720301.0 / 6129723600.0 - (49.0 * a2) / 108.0;
+        coeffs->rho31v6l = -26.0 / 63.0;
+        coeffs->rho31v7 = (-2579.0 * a) / 5346.0 + a * a2 / 9.0;
+        coeffs->rho31v8 = 2606097992581.0 / 4854741091200.0;
+        coeffs->rho31v8l = 169.0 / 567.0;
+
+        coeffs->f31v3 = (chiA * (-4.0 + 11.0 * eta) + chiS * dM * (-4.0 + 13.0 * eta)) / (2.0 * dM);
+    }
+    else
+    {
+        coeffs->f31v3 = -chiA * 5.0 / 8.0;
+    }
+
+    // l = 4, Eqs. A10a - A10d for delta, Eq. A15d for f
+    // Eqs. 25 - 28 of DIN and Eqs. 27f - 27i of PBFRT for delta
+
+    coeffs->delta44vh3 = (112.0 + 219.0 * eta) / (-120.0 * m1Plus3eta);
+    coeffs->delta44vh6 = (-464.0 * aDelta) / 75.0 + (25136.0 * PI) / 3465.0;
+    coeffs->delta44vh9 = 0.0;
+    if (use_hm)
+    {
+        // RC: This terms are in Eq.A15 in https://journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+        coeffs->delta44vh9 = -55144.0 / 375.0 + 201088.0 * PI * PI / 10395.0;
+    }
+    coeffs->rho44v2 = (1614.0 - 5870.0 * eta + 2625.0 * eta2) / (1320.0 * m1Plus3eta);
+    coeffs->rho44v3 = (chiA * (10.0 - 39.0 * eta) * dM + chiS *
+                                                             (10.0 - 41.0 * eta + 42.0 * eta2)) /
+                      (15.0 * m1Plus3eta);
+    coeffs->rho44v4 = a2 / 2.0 + (-511573572.0 + 2338945704.0 * eta - 313857376.0 * eta2 - 6733146000.0 * eta3 + 1252563795.0 * eta2 * eta2) / (317116800.0 * m1Plus3eta2);
+    coeffs->rho44v5 = (-69.0 * a) / 55.0;
+    coeffs->rho44v8 = 0.0;
+    coeffs->rho44v8l = 0.0;
+    coeffs->rho44v10 = 0.0;
+    coeffs->rho44v10l = 0.0;
+
+    if (use_hm)
+    {
+        // RC: This terms are in Eq.A8 in https://journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+        coeffs->rho44v4 = ((
+                               -511573572.0 + 2338945704.0 * eta - 313857376.0 * eta2 - 6733146000.0 * eta3 + 1252563795.0 * eta2 * eta2) /
+                               (317116800.0 * m1Plus3eta2) +
+                           chiS2 / 2.0 + dM * chiS * chiA + dM2 * chiA2 / 2.0);
+        coeffs->rho44v5 = chiA * dM * (-8280.0 + 42716.0 * eta - 57990.0 * eta2 + 8955 * eta3) / (6600.0 * m1Plus3eta2) + chiS * (-8280.0 + 66284.0 * eta - 176418.0 * eta2 + 128085.0 * eta3 + 88650 * eta2 * eta2) / (6600.0 * m1Plus3eta2);
+        coeffs->rho44v8 = -172066910136202271.0 / 19426955708160000.0;
+        coeffs->rho44v8l = 845198.0 / 190575.0;
+        coeffs->rho44v10 = -17154485653213713419357.0 / 568432724020761600000.0;
+        coeffs->rho44v10l = 22324502267.0 / 3815311500.0;
+    }
+    coeffs->rho44v6 = 16600939332793.0 / 1098809712000.0 + (217.0 * a2) / 3960.0;
+    coeffs->rho44v6l = -12568.0 / 3465.0;
+
+    coeffs->delta43vh3 = (486.0 + 4961.0 * eta) / (810.0 * (1.0 - 2.0 * eta));
+    coeffs->delta43vh4 = (11.0 * aDelta) / 4.0;
+    coeffs->delta43vh6 = 1571.0 * PI / 385.0;
+    if (dM2)
+    {
+        coeffs->rho43v = 0.0;
+        coeffs->rho43v2 = (222.0 - 547.0 * eta + 160.0 * eta2) / (176.0 * (-1.0 + 2.0 * eta));
+        coeffs->rho43v4 = -6894273.0 / 7047040.0 + (3.0 * a2) / 8.0;
+        coeffs->rho43v5 = (-12113.0 * a) / 6160.0;
+        coeffs->rho43v6 = 1664224207351.0 / 195343948800.0;
+        coeffs->rho43v6l = -1571.0 / 770.0;
+        coeffs->f43v = (5.0 * (chiA - chiS * dM) * eta) / (2.0 * dM * (-1.0 + 2.0 * eta));
+    }
+    else
+    {
+        coeffs->f43v = -5.0 * chiA / 4.0;
+    }
+
+    coeffs->delta42vh3 = (7.0 * (1.0 + 6.0 * eta)) / (-15.0 * m1Plus3eta);
+    coeffs->delta42vh6 = (212.0 * aDelta) / 75.0 + (6284.0 * PI) / 3465.0;
+
+    coeffs->rho42v2 = (1146.0 - 3530.0 * eta + 285.0 * eta2) / (1320.0 * m1Plus3eta);
+    coeffs->rho42v3 = (chiA * (10.0 - 21.0 * eta) * dM + chiS *
+                                                             (10.0 - 59.0 * eta + 78.0 * eta2)) /
+                      (15.0 * m1Plus3eta);
+    coeffs->rho42v4 = a2 / 2.0 + (-114859044.0 + 295834536.0 * eta + 1204388696.0 * eta2 - 3047981160.0 * eta3 - 379526805.0 * eta2 * eta2) / (317116800.0 * m1Plus3eta2);
+    coeffs->rho42v5 = (-7.0 * a) / 110.0;
+    coeffs->rho42v6 = 848238724511.0 / 219761942400.0 + (2323.0 * a2) / 3960.0;
+    coeffs->rho42v6l = -3142.0 / 3465.0;
+
+    coeffs->delta41vh3 = (2.0 + 507.0 * eta) / (10.0 * (1.0 - 2.0 * eta));
+    coeffs->delta41vh4 = (11.0 * aDelta) / 12.0;
+    coeffs->delta41vh6 = 1571.0 * PI / 3465.0;
+
+    if (dM2)
+    {
+        coeffs->rho41v = 0.0;
+        coeffs->rho41v2 = (602.0 - 1385.0 * eta + 288.0 * eta2) / (528.0 * (-1.0 + 2.0 * eta));
+        coeffs->rho41v4 = -7775491.0 / 21141120.0 + (3.0 * a2) / 8.0;
+        coeffs->rho41v5 = (-20033.0 * a) / 55440.0 - (5 * a * a2) / 6.0;
+        coeffs->rho41v6 = 1227423222031.0 / 1758095539200.0;
+        coeffs->rho41v6l = -1571.0 / 6930.0;
+        coeffs->f41v = (5.0 * (chiA - chiS * dM) * eta) / (2.0 * dM * (-1.0 + 2.0 * eta));
+    }
+    else
+    {
+        coeffs->f41v = -5.0 * chiA / 4.0;
+    }
+    // l = 5, Eqs. A11a - A11e for rho,
+    // Eq. 29 of DIN and Eqs. E1a and E1b of PBFRT for delta
+    coeffs->delta55vh3 = (96875.0 + 857528.0 * eta) / (131250.0 * (1 - 2 * eta));
+    coeffs->delta55vh6 = 0.;
+    coeffs->delta55vh9 = 0.;
+    if (use_hm)
+    {
+        // RC: This terms are in Eq.A16 in https://journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+        coeffs->delta55vh6 = 3865.0 / 429.0 * PI;
+        coeffs->delta55vh9 = (-7686949127.0 + 954500400.0 * PI * PI) / 31783752.0;
+    }
+    if (dM2)
+    {
+        coeffs->rho55v2 = (487.0 - 1298.0 * eta + 512.0 * eta2) / (390.0 * (-1.0 + 2.0 * eta));
+        coeffs->rho55v3 = (-2.0 * a) / 3.0;
+        coeffs->rho55v4 = -3353747.0 / 2129400.0 + a2 / 2.0;
+        coeffs->rho55v5 = -241.0 * a / 195.0;
+        coeffs->rho55v6 = 0.0;
+        coeffs->rho55v6l = 0.0;
+        coeffs->rho55v8 = 0.0;
+        coeffs->rho55v8l = 0.0;
+        coeffs->rho55v10 = 0.0;
+        coeffs->rho55v10l = 0.0;
+        coeffs->f55v3 = 0.0;
+        coeffs->f55v4 = 0.0;
+        coeffs->f55v5c = 0.0;
+
+        if (use_hm)
+        {
+            // RC: This terms are in Eq.A9 in https://journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+            coeffs->rho55v6 = 190606537999247.0 / 11957879934000.0;
+            coeffs->rho55v6l = -1546.0 / 429.0;
+            coeffs->rho55v8 = -1213641959949291437.0 / 118143853747920000.0;
+            coeffs->rho55v8l = 376451.0 / 83655.0;
+            coeffs->rho55v10 = -150082616449726042201261.0 / 4837990810977324000000.0;
+            coeffs->rho55v10l = 2592446431.0 / 456756300.0;
+
+            coeffs->f55v3 = chiA / dM * (10.0 / (3.0 * (-1.0 + 2.0 * eta)) - 70.0 * eta / (3.0 * (-1.0 + 2.0 * eta)) + 110.0 * eta2 / (3.0 * (-1.0 + 2.0 * eta))) + chiS * (10.0 / (3.0 * (-1.0 + 2.0 * eta)) - 10.0 * eta / (-1.0 + 2.0 * eta) + 10 * eta2 / (-1.0 + 2.0 * eta));
+            coeffs->f55v4 = (chiS2 * (-5.0 / (2.0 * (-1.0 + 2.0 * eta)) + 5.0 * eta / (-1.0 + 2.0 * eta)) + chiA * chiS / dM * (-5.0 / (-1.0 + 2.0 * eta) + 30.0 * eta / (-1.0 + 2.0 * eta) - 40.0 * eta2 / (-1.0 + 2.0 * eta)) + chiA2 * (-5.0 / (2.0 * (-1.0 + 2.0 * eta)) + 15.0 * eta / (-1.0 + 2.0 * eta) - 20.0 * eta2 / (-1.0 + 2.0 * eta)));
+            // RC: this is the calibration parameter which is initially set to 0.
+            coeffs->f55v5c = 0.0;
+        }
+    }
+    else
+    {
+        coeffs->f55v3 = 0.;
+        coeffs->f55v4 = 0.;
+        coeffs->f55v5c = 0.;
+        if (use_hm)
+        {
+            // RC: This terms are in Eq.A12 in https://journals.aps.org/prd/abstract/10.1103/PhysRevD.98.084028
+            coeffs->f55v3 = chiA * (10.0 / (3.0 * (-1.0 + 2.0 * eta)) - 70.0 * eta / (3.0 * (-1.0 + 2.0 * eta)) + 110.0 * eta2 / (3.0 * (-1.0 + 2.0 * eta)));
+            coeffs->f55v4 = (chiA * chiS * (-5.0 / (-1.0 + 2.0 * eta) + 30.0 * eta / (-1.0 + 2.0 * eta) - 40.0 * eta2 / (-1.0 + 2.0 * eta)));
+            coeffs->f55v5c = 0.;
+        }
+    }
+    coeffs->delta54vh3 = 8.0 / 15.0;
+    coeffs->delta54vh4 = 12.0 * aDelta / 5.0;
+
+    coeffs->rho54v2 = (-17448.0 + 96019.0 * eta - 127610.0 * eta2 + 33320.0 * eta3) / (13650.0 * (1.0 - 5.0 * eta + 5.0 * eta2));
+    coeffs->rho54v3 = (-2.0 * a) / 15.0;
+    coeffs->rho54v4 = -16213384.0 / 15526875.0 + (2.0 * a2) / 5.0;
+
+    coeffs->delta53vh3 = 31.0 / 70.0;
+
+    if (dM2)
+    {
+
+        coeffs->rho53v2 = (375.0 - 850.0 * eta + 176.0 * eta2) / (390.0 * (-1.0 + 2.0 * eta));
+        coeffs->rho53v3 = (-2.0 * a) / 3.0;
+        coeffs->rho53v4 = -410833.0 / 709800.0 + a2 / 2.0;
+        coeffs->rho53v5 = -103.0 * a / 325.0;
+    }
+    coeffs->delta52vh3 = 4.0 / 15.0;
+    coeffs->delta52vh4 = 6.0 * aDelta / 5.0;
+
+    coeffs->rho52v2 = (-15828.0 + 84679.0 * eta - 104930.0 * eta2 + 21980.0 * eta3) / (13650.0 * (1.0 - 5.0 * eta + 5.0 * eta2));
+    coeffs->rho52v3 = (-2.0 * a) / 15.0;
+    coeffs->rho52v4 = -7187914.0 / 15526875.0 + (2.0 * a2) / 5.0;
+
+    coeffs->delta51vh3 = 31.0 / 210.0;
+
+    if (dM2)
+    {
+        coeffs->rho51v2 = (319.0 - 626.0 * eta + 8.0 * eta2) / (390.0 * (-1.0 + 2.0 * eta));
+        coeffs->rho51v3 = (-2.0 * a) / 3.0;
+        coeffs->rho51v4 = -31877.0 / 304200.0 + a2 / 2.0;
+        coeffs->rho51v5 = 139.0 * a / 975.0;
+    }
+
+    // l = 6, Eqs. A12a - A12f for rho, Eqs. E1c and E1d of PBFRT for delta
+
+    coeffs->delta66vh3 = 43.0 / 70.0;
+    coeffs->rho66v2 = (-106.0 + 602.0 * eta - 861.0 * eta2 + 273.0 * eta3) / (84.0 * (1.0 - 5.0 * eta + 5.0 * eta2));
+    coeffs->rho66v3 = (-2.0 * a) / 3.0;
+    coeffs->rho66v4 = -1025435.0 / 659736.0 + a2 / 2.0;
+    coeffs->delta65vh3 = 10.0 / 21.0;
+
+    if (dM2)
+    {
+        coeffs->rho65v2 = (-185.0 + 838.0 * eta - 910.0 * eta2 + 220.0 * eta3) / (144.0 * (dM2 + 3.0 * eta2));
+        coeffs->rho65v3 = -2.0 * a / 9.0;
+    }
+
+    coeffs->delta64vh3 = 43.0 / 105.0;
+
+    coeffs->rho64v2 = (-86.0 + 462.0 * eta - 581.0 * eta2 + 133.0 * eta3) / (84.0 * (1.0 - 5.0 * eta + 5.0 * eta2));
+    coeffs->rho64v3 = (-2.0 * a) / 3.0;
+    coeffs->rho64v4 = -476887.0 / 659736.0 + a2 / 2.0;
+
+    coeffs->delta63vh3 = 2.0 / 7.0;
+
+    if (dM2)
+    {
+        coeffs->rho63v2 = (-169.0 + 742.0 * eta - 750.0 * eta2 + 156.0 * eta3) / (144.0 * (dM2 + 3.0 * eta2));
+        coeffs->rho63v3 = -2.0 * a / 9.0;
+    }
+
+    coeffs->delta62vh3 = 43.0 / 210.0;
+
+    coeffs->rho62v2 = (-74.0 + 378.0 * eta - 413.0 * eta2 + 49.0 * eta3) / (84.0 * (1.0 - 5.0 * eta + 5.0 * eta2));
+    coeffs->rho62v3 = (-2.0 * a) / 3.0;
+    coeffs->rho62v4 = -817991.0 / 3298680.0 + a2 / 2.0;
+
+    coeffs->delta61vh3 = 2.0 / 21.0;
+
+    if (dM2)
+    {
+        coeffs->rho61v2 = (-161.0 + 694.0 * eta - 670.0 * eta2 + 124.0 * eta3) / (144.0 * (dM2 + 3.0 * eta2));
+        coeffs->rho61v3 = -2.0 * a / 9.0;
+    }
+
+    // l = 7, Eqs. A13a - A13g for rho, Eqs. E1e and E1f of PBFRT for delta
+    coeffs->delta77vh3 = 19.0 / 36.0;
+
+    if (dM2)
+    {
+        coeffs->rho77v2 = (-906.0 + 4246.0 * eta - 4963.0 * eta2 + 1380.0 * eta3) / (714.0 * (dM2 + 3.0 * eta2));
+        coeffs->rho77v3 = -2.0 * a / 3.0;
+    }
+
+    coeffs->rho76v2 = (2144.0 - 16185.0 * eta + 37828.0 * eta2 - 29351.0 * eta3 + 6104.0 * eta2 * eta2) / (1666.0 * (-1 + 7 * eta - 14 * eta2 + 7 * eta3));
+
+    coeffs->delta75vh3 = 95.0 / 252.0;
+
+    if (dM2)
+    {
+        coeffs->rho75v2 = (-762.0 + 3382.0 * eta - 3523.0 * eta2 + 804.0 * eta3) / (714.0 * (dM2 + 3.0 * eta2));
+        coeffs->rho75v3 = -2.0 * a / 3.0;
+    }
+
+    coeffs->rho74v2 = (17756.0 - 131805.0 * eta + 298872.0 * eta2 - 217959.0 * eta3 + 41076.0 * eta2 * eta2) / (14994.0 * (-1.0 + 7.0 * eta - 14.0 * eta2 + 7.0 * eta3));
+
+    coeffs->delta73vh3 = 19.0 / 84.0;
+
+    if (dM2)
+    {
+        coeffs->rho73v2 = (-666.0 + 2806.0 * eta - 2563.0 * eta2 + 420.0 * eta3) / (714.0 * (dM2 + 3.0 * eta2));
+        coeffs->rho73v3 = -2.0 * a / 3.0;
+    }
+
+    coeffs->rho72v2 = (16832.0 - 123489.0 * eta + 273924.0 * eta2 - 190239.0 * eta3 + 32760.0 * eta2 * eta2) / (14994.0 * (-1.0 + 7.0 * eta - 14.0 * eta2 + 7.0 * eta3));
+
+    coeffs->delta71vh3 = 19.0 / 252.0;
+
+    if (dM2)
+    {
+        coeffs->rho71v2 = (-618.0 + 2518.0 * eta - 2083.0 * eta2 + 228.0 * eta3) / (714.0 * (dM2 + 3.0 * eta2));
+        coeffs->rho71v3 = -2.0 * a / 3.0;
+    }
+
+    // l = 8, Eqs. A14a - A14h
+
+    coeffs->rho88v2 = (3482.0 - 26778.0 * eta + 64659.0 * eta2 -
+                       53445.0 * eta3 + 12243.0 * eta2 * eta2) /
+                      (2736.0 * (-1.0 + 7.0 * eta - 14.0 * eta2 + 7.0 * eta3));
+
+    if (dM2)
+    {
+        coeffs->rho87v2 = (23478.0 - 154099.0 * eta + 309498.0 * eta2 - 207550.0 * eta3 + 38920 * eta2 * eta2) / (18240.0 * (-1 + 6 * eta - 10 * eta2 + 4 * eta3));
+    }
+    coeffs->rho86v2 = (1002.0 - 7498.0 * eta + 17269.0 * eta2 - 13055.0 * eta3 + 2653.0 * eta2 * eta2) / (912.0 * (-1.0 + 7.0 * eta - 14.0 * eta2 + 7.0 * eta3));
+
+    if (dM2)
+    {
+        coeffs->rho85v2 = (4350.0 - 28055.0 * eta + 54642.0 * eta2 - 34598.0 * eta3 + 6056.0 * eta2 * eta2) / (3648.0 * (-1.0 + 6.0 * eta - 10.0 * eta2 + 4.0 * eta3));
+    }
+    coeffs->rho84v2 = (2666.0 - 19434.0 * eta + 42627.0 * eta2 - 28965.0 * eta3 + 4899.0 * eta2 * eta2) / (2736.0 * (-1.0 + 7.0 * eta - 14.0 * eta2 + 7.0 * eta3));
+
+    if (dM2)
+    {
+        coeffs->rho83v2 = (20598.0 - 131059.0 * eta + 249018.0 * eta2 - 149950.0 * eta3 + 24520.0 * eta2 * eta2) / (18240.0 * (-1.0 + 6.0 * eta - 10.0 * eta2 + 4.0 * eta3));
+    }
+
+    coeffs->rho82v2 = (2462.0 - 17598.0 * eta + 37119.0 * eta2 - 22845.0 * eta3 + 3063.0 * eta2 * eta2) / (2736.0 * (-1.0 + 7.0 * eta - 14.0 * eta2 + 7.0 * eta3));
+
+    if (dM2)
+    {
+        coeffs->rho81v2 = (20022.0 - 126451.0 * eta + 236922.0 * eta2 - 138430.0 * eta3 + 21640.0 * eta2 * eta2) / (18240.0 * (-1.0 + 6.0 * eta - 10.0 * eta2 + 4.0 * eta3));
+    }
+}
+
+
+CUDA_CALLABLE_MEMBER
+double EOBSpinFactorizedFlux(double *values, double m_1, double m_2, double chiS, double chiA, double tplspin, double omega,
+                             double *newtonian_prefixes, int prefixes_start_ind, double eta, double H, int lMax, double vPhiInput, double h22_calib, int numSys, int i)
+{
+    // TODO: need nqcCoeffs
+
+    double flux = 0.0;
+    // Omega is the derivative of phi * /
+    double omegaSq = omega * omega;
+
+    double v = pow(omega, (1.0 / 3.));
+    double hT = 0.0;
+    cmplx hLM(0.0, 0.0);
+    int l, m;
+
+    double v2 = v * v;
+    double r = values[0 * numSys + i];
+    double phi = values[1 * numSys + i];
+    double pp = values[3 * numSys + i];
+    double vPhi = r * pow(vPhiInput, (1.0 / 3.));
+    vPhi *= omega;
+    // printf("Inside the flux, the calib is %d\n", h22_calib)
+    double vPhi2 = vPhi * vPhi;
+    // hCoeffs = ak['hCoeffs']
+
+    FacWaveformCoeffs hCoeffs;
+    EOBCalcSpinFacWaveformCoefficients(&hCoeffs, 1, m_1, m_2, eta, tplspin, chiS, chiA);
+    cmplx newtonian_prefix;
+    int ind_lm = 0;
+    int ind_real, ind_imag;
+    for (int l = 2; l < lMax + 1; l += 1)
+    {
+        for (int m = 1; m < l + 1; m += 1)
+        {
+            ind_real = (prefixes_start_ind + 2 * ind_lm + 0) * numSys + i;
+            ind_imag = (prefixes_start_ind + 2 * ind_lm + 0) * numSys + i;
+            newtonian_prefix = cmplx(newtonian_prefixes[ind_real], newtonian_prefixes[ind_imag]);
+            hLM = EOBFluxGetSpinFactorizedWaveform(
+                r, phi, pp, v, H, l, m, hCoeffs, newtonian_prefix, eta, vPhi, vPhi2, omega, v2, h22_calib);
+
+            // hLM += hT
+
+            // Eq .13
+            flux += ((m * m) * omegaSq * pow(gcmplx::abs(hLM), 2));
+            ind_lm += 1;
+        }
+    }
+    // print(f"flux before:{flux}, after {flux/PI / 8.0}")
+    return flux / PI / 8.0;
+}
+
+
+CUDA_CALLABLE_MEMBER
+void RR_force(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys, int i)
+{
+    int ind1 = 0 * numSys + i;
+    int ind2 = 1 * numSys + i;
+    int ind3 = 2 * numSys + i;
+    int ind4 = 3 * numSys + i;
+
+    int m_1_ind = 0 * numSys + i;
+    int m_2_ind = 1 * numSys + i;
+    int chi_1_ind = 2 * numSys + i;
+    int chi_2_ind = 3 * numSys + i;
+    int K_ind = 4 * numSys + i;
+    int d5_ind = 5 * numSys + i;
+    int dSO_ind = 6 * numSys + i;
+    int dSS_ind = 7 * numSys + i;
+    int omega_ind = 8 * numSys + i;
+    int h22_calib_ind = 9 * numSys + i;
+    int prefixes_start_ind = 10;
+
+    double m_1 = additionalArgs[m_1_ind];
+    double m_2 = additionalArgs[m_2_ind];
+    double chi_1 = additionalArgs[chi_1_ind];
+    double chi_2 = additionalArgs[chi_2_ind];
+    double K = additionalArgs[K_ind];
+    double d5 = additionalArgs[d5_ind];
+    double dSO = additionalArgs[dSO_ind];
+    double dSS = additionalArgs[dSS_ind];
+    double omega = additionalArgs[omega_ind];
+    double h22_calib = additionalArgs[h22_calib_ind];
+    double *prefixes = additionalArgs;
+
+    double r = args[ind1];
+    double phi = args[ind2];
+    double pr = args[ind3];
+    double L = args[ind4];
+
+    // Forcing part
+    double M = m_1 + m_2;
+    double mu = m_1 * m_2 / M;
+    double nu = mu / M;
+    double pphi = L;
+
+    // setup args for p_circ (set pr to zero)
+    // p_circ = np.array([ 0.0, pphi ])
+    // store for after grad comp
+    double args_ind3_return = args[ind3];
+
+    args[ind3] = 0.0;
+    grad_Ham_align_AD_single(args, grad_out, additionalArgs, numSys, i);
+
+    args[ind3] = args_ind3_return;
+
+    double omega_circ = grad_out[3 * numSys + i];
+
+    double vPhi = 1. / (pow(omega_circ, 2) * pow(r, 3));
+    double H_val = nu * evaluate_Ham_align_AD(r, phi, pr, pphi, m_1, m_2, chi_1, chi_2, K, d5, dSO, dSS);
+
+    // Needed for hCoeffs
+    double chiS = 0.5 * (chi_1 + chi_2);
+    double chiA = 0.5 * (chi_1 - chi_2);
+    double tplspin = (1.0 - 2.0 * nu) * chiS + (m_1 - m_2) / (m_1 + m_2) * chiA;
+
+    double flux = EOBSpinFactorizedFlux(args, m_1, m_2, chiS, chiA, tplspin, omega, prefixes, prefixes_start_ind, nu, H_val, 8, vPhi, h22_calib, numSys, i);
+
+    flux /= nu;
+    double f_over_om = flux / omega;
+    double Fr = -pr / pphi * f_over_om;
+    double Fphi = -f_over_om;
+
+    force_out[0 * numSys + i] = Fr;
+    force_out[1 * numSys + i] = Fphi;
+}
+
+
+CUDA_CALLABLE_MEMBER
+double IC_diss(double pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out)
 {
 #ifdef __CUDACC__
     int i = threadIdx.x;
@@ -710,7 +2677,7 @@ double IC_diss(double pr, double *args, double *additionalArgs, double *grad_out
     // just a place holder
     grad_Ham_align_AD_single(args, grad_out, additionalArgs, BLOCK, i);
     hessian_Ham_align_AD_single(args, hess_out, additionalArgs, BLOCK, i);
-    RR_force_2PN(force_out, args, additionalArgs);
+    RR_force(force_out, grad_temp_force, args, additionalArgs, BLOCK, i);
 
     double d2Hdr2 = hess_out[0 * BLOCK + i];
     double d2HdrdL = hess_out[12 * BLOCK + i]; // [3,0]
@@ -723,7 +2690,7 @@ double IC_diss(double pr, double *args, double *additionalArgs, double *grad_out
 }
 
 CUDA_CALLABLE_MEMBER
-void false_position_step(double *res, double *bounds, double *fbounds, double *args, double *additionalArgs, double *grad_out, double *hess_out, double *force_out)
+void false_position_step(double *res, double *bounds, double *fbounds, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out)
 {
 #ifdef __CUDACC__
     int i = threadIdx.x;
@@ -741,7 +2708,7 @@ void false_position_step(double *res, double *bounds, double *fbounds, double *a
 
     double c = (a * f_b - b * f_a) / (f_b - f_a);
 
-    double f_c = IC_diss(c, args, additionalArgs, grad_out, hess_out, force_out);
+    double f_c = IC_diss(c, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out);
     if (((f_b < 0.0) && (f_c < 0.0)) || ((f_b >= 0.0) && (f_c >= 0.0)))
     {
         b = c;
@@ -764,7 +2731,7 @@ void false_position_step(double *res, double *bounds, double *fbounds, double *a
 }
 
 CUDA_CALLABLE_MEMBER
-double root_find_scalar(double *res, double *bounds, double *fbounds, double *args, double *additionalArgs, double *grad_out, double *hess_out, double *force_out, int max_iter, double err)
+double root_find_scalar(double *res, double *bounds, double *fbounds, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int max_iter, double err)
 {
 #ifdef __CUDACC__
     int i = threadIdx.x;
@@ -778,14 +2745,14 @@ double root_find_scalar(double *res, double *bounds, double *fbounds, double *ar
     double a = bounds[0 * BLOCK + i];
     double b = bounds[1 * BLOCK + i];
 
-    fbounds[0 * BLOCK + i] = IC_diss(a, args, additionalArgs, grad_out, hess_out, force_out);
-    fbounds[1 * BLOCK + i] = IC_diss(b, args, additionalArgs, grad_out, hess_out, force_out);
+    fbounds[0 * BLOCK + i] = IC_diss(a, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out);
+    fbounds[1 * BLOCK + i] = IC_diss(b, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out);
 
     double c = 0.0;
     int check = 0;
     while (it < max_iter)
     {
-        false_position_step(res, bounds, fbounds, args, additionalArgs, grad_out, hess_out, force_out);
+        false_position_step(res, bounds, fbounds, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out);
         c = res[0 * BLOCK + i];
         f_c = res[1 * BLOCK + i];
         it += 1;
@@ -800,7 +2767,7 @@ double root_find_scalar(double *res, double *bounds, double *fbounds, double *ar
 }
 
 #define NARGSMAX 4
-#define NADDARGSMAX 5
+#define NADDARGSMAX 80
 
 CUDA_KERNEL
 void root_find_scalar_all(double *pr_res, double *start_bounds, double *argsIn, double *additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args)
@@ -813,6 +2780,7 @@ void root_find_scalar_all(double *pr_res, double *start_bounds, double *argsIn, 
     CUDA_SHARED double args[NARGSMAX * BLOCK];
     CUDA_SHARED double additionalArgs[NADDARGSMAX * BLOCK];
     CUDA_SHARED double grad_out[NARGSMAX * BLOCK];
+    CUDA_SHARED double grad_temp_force[NARGSMAX * BLOCK];
     // 2 is for the symmetrization
     CUDA_SHARED double hess_out[2 * NARGSMAX * NARGSMAX * BLOCK];
     CUDA_SHARED double force_out[2 * BLOCK];
@@ -839,6 +2807,7 @@ void root_find_scalar_all(double *pr_res, double *start_bounds, double *argsIn, 
         double args[NARGSMAX * BLOCK];
         double additionalArgs[NADDARGSMAX * BLOCK];
         double grad_out[NARGSMAX * BLOCK];
+        double grad_temp_force[NARGSMAX * BLOCK];
         // 2 is for the symmetrization
         double hess_out[2 * NARGSMAX * NARGSMAX * BLOCK];
         double force_out[2 * BLOCK];
@@ -852,7 +2821,7 @@ void root_find_scalar_all(double *pr_res, double *start_bounds, double *argsIn, 
         for (int jj = 0; jj < num_add_args; jj += 1)
             additionalArgs[jj * BLOCK + i] = additionalArgsIn[jj * numBinAll + bin_i];
 
-        double c_res_bin_i = root_find_scalar(res, bounds, fbounds, args, additionalArgs, grad_out, hess_out, force_out, max_iter, err);
+        double c_res_bin_i = root_find_scalar(res, bounds, fbounds, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, max_iter, err);
 
         pr_res[bin_i] = c_res_bin_i;
     }
@@ -995,6 +2964,7 @@ void root_find_all(double *xOut, double *x0In, double *argsIn, double *additiona
     CUDA_SHARED double args[NARGSMAX * BLOCK];
     CUDA_SHARED double additionalArgs[NADDARGSMAX * BLOCK];
     CUDA_SHARED double grad_out[NARGSMAX * BLOCK];
+    CUDA_SHARED double grad_temp_force[NARGSMAX * BLOCK];
     CUDA_SHARED double Jac[NARGSMAX * NARGSMAX * BLOCK];
 #endif
     int start, increment;
@@ -1020,6 +2990,7 @@ void root_find_all(double *xOut, double *x0In, double *argsIn, double *additiona
         double args[NARGSMAX * BLOCK];
         double additionalArgs[NADDARGSMAX * BLOCK];
         double grad_out[NARGSMAX * BLOCK];
+        double grad_temp_force[NARGSMAX * BLOCK];
         double Jac[NARGSMAX * NARGSMAX * BLOCK];
 #endif
 

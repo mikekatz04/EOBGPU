@@ -5,6 +5,7 @@ from .pyEOB_cpu import ODE as ODE_cpu
 from .pyEOB_cpu import root_find_scalar_all as root_find_scalar_all_cpu
 from .pyEOB_cpu import root_find_all as root_find_all_cpu
 from .pyEOB_cpu import compute_hlms as compute_hlms_cpu
+#from .pyEOB_cpu import EOBComputeNewtonMultipolePrefixes as EOBComputeNewtonMultipolePrefixes_gpu
 import numpy as np
 from bbhx.utils.constants import *
 
@@ -24,6 +25,7 @@ try:
     from .pyEOB import root_find_scalar_all as root_find_scalar_all_gpu
     from .pyEOB import ODE as ODE_gpu
     from .pyEOB import ODE_Ham_align_AD as ODE_Ham_align_AD_gpu
+    from .pyEOB import EOBComputeNewtonMultipolePrefixes as EOBComputeNewtonMultipolePrefixes_gpu
     from .pytdinterp import TDInterp_wrap2 as TDInterp_wrap_gpu
     from .pytdinterp import interpolate_TD_wrap as interpolate_TD_wrap_gpu
     from .pytdinterp import all_in_one_likelihood as all_in_one_likelihood_gpu
@@ -591,7 +593,7 @@ class ODEWrapper:
 
 
 class SEOBNRv4PHM:
-    def __init__(self, max_init_len=-1, use_gpu=False, **kwargs):
+    def __init__(self, max_init_len=-1, use_gpu=False, ell_max=8, **kwargs):
 
         self.use_gpu = use_gpu
         if use_gpu:
@@ -599,12 +601,14 @@ class SEOBNRv4PHM:
             self.compute_hlms = compute_hlms_gpu
             self.root_find = root_find_all_gpu
             self.root_find_scalar = root_find_scalar_all_gpu
+            self.get_newtonian_prefixes = EOBComputeNewtonMultipolePrefixes_gpu
 
         else:
             self.xp = np
             self.compute_hlms = compute_hlms_cpu
             self.root_find = root_find_all_cpu
             self.root_find_scalar = root_find_scalar_all_cpu
+            self.get_newtonian_prefixes = EOBComputeNewtonMultipolePrefixes_cpu
 
         if max_init_len > 0:
             self.use_buffers = True
@@ -612,6 +616,10 @@ class SEOBNRv4PHM:
 
         else:
             self.use_buffers = False
+
+        self.ell_max = ell_max
+
+        self.num_lm = np.sum(np.arange(2, self.ell_max + 1))
 
         # TODO: do we really need the (l, 0) modes
         self.allowable_modes = [
@@ -674,6 +682,17 @@ class SEOBNRv4PHM:
         chi_2 = self.xp.asarray(chi_2)
         dt = 1.0 / 16384 / (mt * MTSUN_SI)
 
+        prefixes = self.xp.zeros(
+            (self.num_lm * self.num_bin_all), self.xp.complex128)
+        self.get_newtonian_prefixes(
+            prefixes, m1, m2, self.ell_max, self.num_bin_all)
+
+        prefixes = prefixes.reshape(self.num_lm, self.num_bin_all)
+
+        prefixes_new = self.xp.zeros((self.num_lm * 2, self.num_bin_all))
+        prefixes_new[0::2] = prefixes.real
+        prefixes_new[1::2] = prefixes.imag
+        breakpoint()
         r_guess = omega0 ** (-2.0 / 3)
         # z = [r_guess, np.sqrt(r_guess)]
         n = 2
@@ -682,12 +701,16 @@ class SEOBNRv4PHM:
         num_args = 4
         num_add_args = 5
         argsIn = self.xp.zeros((num_args, self.num_bin_all)).flatten()
-        additionalArgsIn = self.xp.zeros((num_add_args, self.num_bin_all))
+        # add args here contains the newtonian prefixes
+        # 2 for re and im
+        additionalArgsIn = self.xp.zeros(
+            (num_add_args + 2 * self.num_lm, self.num_bin_all))
         additionalArgsIn[0] = m_1_scaled
         additionalArgsIn[1] = m_2_scaled
         additionalArgsIn[2] = chi_1
         additionalArgsIn[3] = chi_2
         additionalArgsIn[4] = omega0
+        additionalArgsIn[5:] = prefixes_new
         additionalArgsIn = additionalArgsIn.flatten().copy()
 
         x0In = self.xp.zeros((n, self.num_bin_all))
@@ -735,7 +758,7 @@ class SEOBNRv4PHM:
             num_args,
             num_add_args,
         )
-
+        breakpoint()
         return r0, pphi0, pr0
 
     def run_trajectory(self, r0, pphi0, pr0, m_1, m_2, chi_1, chi_2, fs=20.0, **kwargs):
