@@ -13,8 +13,8 @@ mt = 60.0  # Total mass in solar masses
 q = 2.5
 num = int(1e2)
 # was 16.82307190336287 0.001682307190336287
-m1 = 0.55 * mt  # np.full(num, mt * q / (1.+q))
-m2 = 0.45 * mt  # np.full(num, mt / (1.+q))
+m1 = np.full(num, 0.55 * mt)  # mt * q / (1.+q))
+m2 = np.full(num, 0.45 * mt)  # mt / (1.+q))
 # chi1x,
 # chi1y,
 chi1z = np.full(num, 0.0000)
@@ -73,9 +73,10 @@ out = bbh(
     modes=[(2, 2)],
     bufferSize=None,
     fill=False,
-    return_type="detector_fd"
+    return_type="geocenter_td"  # "detector_fd"
 )
 
+breakpoint()
 
 for i, inter in enumerate(bilby_interferometers):
     inter.set_strain_data_from_frequency_domain_strain(

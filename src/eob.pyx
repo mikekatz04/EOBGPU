@@ -20,6 +20,9 @@ cdef extern from "EOB.hh":
     void evaluate_Ham_align_AD_wrap(double *out, double r, double phi, double pr, double pphi, double m_1, double m_2, double chi_1, double chi_2, double K, double d5, double dSO, double dSS);
 
     void EOBComputeNewtonMultipolePrefixes_wrap(cmplx *prefixes, double *m1, double *m2, int ell_max, int numSys);
+    void RR_force_wrap(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys);
+    void IC_cons_wrap(double *res, double *x, double *args, double *additionalArgs, double *grad_out, int numSys);
+    void IC_diss_wrap(double* out, double *pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys);
 
 @pointer_adjust
 def compute_hlms(hlms, r_arr, phi_arr, pr_arr, L_arr,
@@ -98,10 +101,37 @@ def evaluate_Ham_align_AD(out, r, phi, pr, pphi, m_1, m_2, chi_1, chi_2, K, d5, 
     evaluate_Ham_align_AD_wrap(<double *>out_in, r, phi, pr, pphi, m_1, m_2, chi_1, chi_2, K, d5, dSO, dSS)
 
 @pointer_adjust
-def EOBComputeNewtonMultipolePrefixes(prefixes, m1, m2, ell_max, numSys):
+def RR_force(force_out, grad_out, args, additionalArgs, numSys):
 
-    cdef size_t prefixes_in = prefixes
-    cdef size_t m1_in = m1
-    cdef size_t m2_in = m2
+    cdef size_t force_out_in = force_out
+    cdef size_t grad_out_in = grad_out
+    cdef size_t args_in = args
+    cdef size_t additionalArgs_in = additionalArgs
 
-    EOBComputeNewtonMultipolePrefixes_wrap(<cmplx *>prefixes_in, <double *>m1_in, <double *>m2_in, ell_max, numSys)
+    RR_force_wrap(<double *>force_out_in, <double *>grad_out_in, <double *>args_in, <double *>additionalArgs_in, numSys)
+
+@pointer_adjust
+def IC_cons(res, x, args, additionalArgs, grad_out, numSys):
+
+    cdef size_t res_in = res
+    cdef size_t x_in = x
+    cdef size_t args_in = args
+    cdef size_t additionalArgs_in = additionalArgs
+    cdef size_t grad_out_in = grad_out
+
+    IC_cons_wrap(<double *>res_in, <double *>x_in, <double *>args_in, <double *>additionalArgs_in, <double *>grad_out_in, numSys)
+
+
+@pointer_adjust
+def IC_diss(out, pr, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys):
+    
+    cdef size_t out_in = out
+    cdef size_t pr_in = pr
+    cdef size_t args_in = args
+    cdef size_t additionalArgs_in = additionalArgs
+    cdef size_t grad_out_in = grad_out
+    cdef size_t grad_temp_force_in = grad_temp_force
+    cdef size_t hess_out_in = hess_out
+    cdef size_t force_out_in = force_out
+
+    IC_diss_wrap(<double *>out_in, <double *>pr_in, <double *>args_in, <double *>additionalArgs_in, <double *>grad_out_in, <double *>grad_temp_force_in, <double *>hess_out_in, <double *>force_out_in, numSys)

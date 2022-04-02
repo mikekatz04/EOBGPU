@@ -6,6 +6,11 @@
 #define NUM_THREADS_EOB 256
 #define MAX_MODES 22
 
+#define NARGSMAX 4
+#define NADDARGSMAX 80
+
+#define BLOCK 32
+
 CUDA_KERNEL
 void compute_hlms(cmplx *hlms, double *r_arr, double *phi_arr, double *pr_arr, double *L_arr,
                   double *m1_arr, double *m2_arr, double *chi1_arr, double *chi2_arr,
@@ -288,14 +293,22 @@ void grad_Ham_align_AD_single(double *arg, double *k, double *additionalArgs, in
     int ode3 = 2 * numSys + i;
     int ode4 = 3 * numSys + i;
 
+    int ind1 = 0 * numSys + i;
+    int ind2 = 1 * numSys + i;
+    int ind3 = 2 * numSys + i;
+    int ind4 = 3 * numSys + i;
+
     int m_1_ind = 0 * numSys + i;
     int m_2_ind = 1 * numSys + i;
     int chi_1_ind = 2 * numSys + i;
     int chi_2_ind = 3 * numSys + i;
-    int K_ind = 4 * numSys + i;
-    int d5_ind = 5 * numSys + i;
-    int dSO_ind = 6 * numSys + i;
-    int dSS_ind = 7 * numSys + i;
+    int omega_ind = 4 * numSys + i;
+    int K_ind = 5 * numSys + i;
+    int d5_ind = 6 * numSys + i;
+    int dSO_ind = 7 * numSys + i;
+    int dSS_ind = 8 * numSys + i;
+    int h22_calib_ind = 9 * numSys + i;
+    int prefixes_start_ind = 10;
 
     double m_1 = additionalArgs[m_1_ind];
     double m_2 = additionalArgs[m_2_ind];
@@ -391,14 +404,21 @@ void hessian_Ham_align_AD_single(double *arg, double *k, double *additionalArgs,
     int ode3 = 2 * numSys + i;
     int ode4 = 3 * numSys + i;
 
+    int ind1 = 0 * numSys + i;
+    int ind2 = 1 * numSys + i;
+    int ind3 = 2 * numSys + i;
+    int ind4 = 3 * numSys + i;
+
     int m_1_ind = 0 * numSys + i;
     int m_2_ind = 1 * numSys + i;
     int chi_1_ind = 2 * numSys + i;
     int chi_2_ind = 3 * numSys + i;
-    int K_ind = 4 * numSys + i;
-    int d5_ind = 5 * numSys + i;
-    int dSO_ind = 6 * numSys + i;
-    int dSS_ind = 7 * numSys + i;
+    int omega_ind = 4 * numSys + i;
+    int K_ind = 5 * numSys + i;
+    int d5_ind = 6 * numSys + i;
+    int dSO_ind = 7 * numSys + i;
+    int dSS_ind = 8 * numSys + i;
+    int h22_calib_ind = 9 * numSys + i;
 
     double m_1 = additionalArgs[m_1_ind];
     double m_2 = additionalArgs[m_2_ind];
@@ -525,243 +545,35 @@ void hessian_Ham_align_AD_wrap(double *arg, double *hessian_out, double *additio
 #endif
 }
 
-CUDA_KERNEL
-void ODE_Ham_align_AD(double *x, double *arg, double *k, double *additionalArgs, int numSys)
-{ // C_grad_HTMalign_AC(double values[], int num_points, double ders[]){
-    int start, increment;
-#ifdef __CUDACC__
-    start = threadIdx.x + blockIdx.x * blockDim.x;
-    increment = blockDim.x * gridDim.x;
-#else
-    start = 0;
-    increment = 1;
-#endif
-
-    for (int i = start; i < numSys; i += increment)
-    {
-        int ode1 = 0 * numSys + i;
-        int ode2 = 1 * numSys + i;
-        int ode3 = 2 * numSys + i;
-        int ode4 = 3 * numSys + i;
-
-        int m_1_ind = 0 * numSys + i;
-        int m_2_ind = 1 * numSys + i;
-        int chi_1_ind = 2 * numSys + i;
-        int chi_2_ind = 3 * numSys + i;
-        int K_ind = 4 * numSys + i;
-        int d5_ind = 5 * numSys + i;
-        int dSO_ind = 6 * numSys + i;
-        int dSS_ind = 7 * numSys + i;
-
-        double m_1 = additionalArgs[m_1_ind];
-        double m_2 = additionalArgs[m_2_ind];
-        double chi_1 = additionalArgs[chi_1_ind];
-        double chi_2 = additionalArgs[chi_2_ind];
-        double K = additionalArgs[K_ind];
-        double d5 = additionalArgs[d5_ind];
-        double dSO = additionalArgs[dSO_ind];
-        double dSS = additionalArgs[dSS_ind];
-
-        double r = arg[ode1];
-        double phi = arg[ode2];
-        double pr = arg[ode3];
-        double L = arg[ode4];
-
-        // if ((i == 0) && (x[i] < 1.0)) printf("%e %e %e %e %e %e %e %e %e\n", x[i], m_1, m_2, chi_1, chi_2, r, phi, pr, L);
-
-        // Forcing part
-        double M = m_1 + m_2;
-        double mu = m_1 * m_2 / (m_1 + m_2);
-        double nu = mu / M;
-        double X1 = m_1 / M;
-        double X2 = m_2 / M;
-        double S1 = pow(m_1 / M, 2) * chi_1;
-        double S2 = pow(m_2 / M, 2) * chi_2;
-        double Delta = (m_1 - m_2) / (m_1 + m_2);
-        double psq = pow(L, 2) / pow(r, 2) + pow(pr, 2);
-
-        double Chi1 = chi_1;
-        double Chi2 = chi_2;
-        double Nu = nu;
-
-        grad_Ham_align_AD_single(arg, k, additionalArgs, numSys, i);
-
-        // Compute H Jacobian
-        double dHdr = k[ode1];
-        double dHdphi = k[ode2];
-        double dHdpr = k[ode3];
-        double dHdpphi = k[ode4];
-
-        double Fr = 4. * L * pow(Nu, 2) * S1 * pr * (-9. * Delta + 32. * Nu + 9.) / (15. * pow(r, 6)) + 4. * L * pow(Nu, 2) * S2 * pr * (9. * Delta + 32. * Nu + 9.) / (15. * pow(r, 6)) - 128 * M_PI * L * pow(Nu, 2) * pr / (5 * pow(r, 6)) - 188 * pow(Nu, 3) * S1 * S2 * pr / (5 * pow(r, 6)) + pow(Nu, 2) * pow(S1, 2) * pr * (Delta + 2 * Nu - 1) / (5 * pow(r, 6)) - pow(Nu, 2) * pow(S2, 2) * pr * (Delta - 2 * Nu + 1) / (5 * pow(r, 6)) - 32 * pow(Nu, 2) * pr / (5 * pow(r, 4)) + 2 * pow(Nu, 2) * pr * (588 * Nu + 1751) / (105 * pow(r, 5)) - pow(Nu, 2) * pr * (9072 * pow(Nu, 2) + 228213 * Nu - 8827) / (2835 * pow(r, 6));
-        double Fphi = -188 * L * pow(Nu, 3) * S1 * S2 / (5 * pow(r, 6)) + L * pow(Nu, 2) * pow(S1, 2) * (Delta + 2 * Nu - 1) / (5 * pow(r, 6)) - L * pow(Nu, 2) * pow(S2, 2) * (Delta - 2 * Nu + 1) / (5 * pow(r, 6)) - 32 * L * pow(Nu, 2) / (5 * pow(r, 4)) + 2 * L * pow(Nu, 2) * (588 * Nu + 1751) / (105 * pow(r, 5)) - L * pow(Nu, 2) * (9072 * pow(Nu, 2) + 228213 * Nu - 8827) / (2835 * pow(r, 6)) + 4 * pow(Nu, 2) * S1 * (-9 * Delta + 32 * Nu + 9) / (15 * pow(r, 5)) + 4 * pow(Nu, 2) * S2 * (9 * Delta + 32 * Nu + 9) / (15 * pow(r, 5)) - 128 * M_PI * pow(Nu, 2) / (5 * pow(r, 5));
-
-        Fphi = Fphi / nu;
-        Fr = Fr / nu;
-
-        // return array([dHdr, dHdphi, dHdpr, dHdpphi])
-
-        k[ode1] = dHdpr;
-        k[ode2] = dHdpphi;
-        k[ode3] = -dHdr + Fr;
-        k[ode4] = -dHdphi + Fphi;
-        // deriv = np.array([grad[n],grad[n+1],-grad[0]+RR_f[0],-grad[1]+RR_f[1]])
-    }
-}
-
-void ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys)
-{
-#ifdef __CUDACC__
-    int num_blocks = (int)std::ceil((numSys + NUM_THREADS_EOB - 1) / NUM_THREADS_EOB);
-    ODE_Ham_align_AD<<<num_blocks, NUM_THREADS_EOB>>>(x, arg, k, additionalArgs, numSys);
-
-    cudaDeviceSynchronize();
-    gpuErrchk(cudaGetLastError());
-#else
-    ODE_Ham_align_AD(x, arg, k, additionalArgs, numSys);
-#endif
-}
-
-#define BLOCK 32
-CUDA_CALLABLE_MEMBER
-void IC_cons(double *res, double *x, double *args, double *additionalArgs, double *grad_out)
-{
-#ifdef __CUDACC__
-    int i = threadIdx.x;
-#else
-    int i = 0;
-#endif
-
-    double omega = additionalArgs[4 * BLOCK + i];
-
-    double r = x[0 * BLOCK + i];
-    double pphi = x[1 * BLOCK + i];
-
-    args[0 * BLOCK + i] = r;
-    args[1 * BLOCK + i] = 0.0;
-    args[2 * BLOCK + i] = 0.0;
-    args[3 * BLOCK + i] = pphi;
-
-    grad_Ham_align_AD_single(args, grad_out, additionalArgs, BLOCK, i);
-
-    double dHdr = grad_out[0 * BLOCK + i];
-    double dHdpphi = grad_out[3 * BLOCK + i];
-    res[0 * BLOCK + i] = dHdpphi - omega;
-    res[1 * BLOCK + i] = dHdr;
-}
 
 CUDA_CALLABLE_MEMBER
-int factorial(int n)
+void IC_cons(double *res, double *x, double *args, double *additionalArgs, double *grad_out, int numSys, int i)
 {
-    double temp = tgamma((double)(n + 1));
-    int out = (int) temp;
-    return out;
-}
-CUDA_CALLABLE_MEMBER
-int factorial2(int n)
-{
-    // odd
-    double temp;
-    if (n % 2)
-    {
-        temp = tgamma((double)(n/2+1)) * pow(2, ((n+1)/2))/sqrt(PI);
-    }
-    else
-    {
-        temp = pow(2, (n/2)) * factorial(n/2); 
-    }
-    int out = (int)temp;
-    return out;
+    double omega = additionalArgs[4 * numSys + i];
+
+    double r = x[0 * numSys + i];
+    double pphi = x[1 * numSys + i];
+
+    args[0 * numSys + i] = r;
+    args[1 * numSys + i] = 0.0;
+    args[2 * numSys + i] = 0.0;
+    args[3 * numSys + i] = pphi;
+
+    grad_Ham_align_AD_single(args, grad_out, additionalArgs, numSys, i);
+
+    double dHdr = grad_out[0 * numSys + i];
+    double dHdpphi = grad_out[3 * numSys + i];
+    res[0 * numSys + i] = dHdpphi - omega;
+    res[1 * numSys + i] = dHdr;
+    //if (i == 0) printf("%.18e %.18e %.18e %.18e %.18e \n", omega, r, pphi, dHdr, dHdpphi);
 }
 
-CUDA_CALLABLE_MEMBER
-cmplx CalculateThisMultipolePrefix(double m1, double m2, int l, int m)
-{
-    cmplx n(0.0, 0.0);
-    cmplx I(0.0, 1.0);
-
-    double totalMass = m1 + m2;
-
-    int epsilon = (l + m) % 2;
-
-    double x1 = m1 / totalMass;
-    double x2 = m2 / totalMass;
-
-    double eta = m1 * m2 / (totalMass * totalMass);
-    int sign;
-    if (abs(m % 2) == 0)
-        sign = 1;
-    else
-        sign = -1;
-
-    //
-    // Eq. 7 of Damour, Iyer and Nagar 2008.
-    // For odd m, c is proportional to dM = m1-m2. In the equal-mass case, c = dM = 0.
-    // In the equal-mass unequal-spin case, however, when spins are different, the odd m term is generally not zero.
-    // In this case, c can be written as c0 * dM, while spins terms in PN expansion may take the form chiA/dM.
-    // Although the dM's cancel analytically, we can not implement c and chiA/dM with the possibility of dM -> 0.
-    // Therefore, for this case, we give numerical values of c0 for relevant modes, and c0 is calculated as
-    // c / dM in the limit of dM -> 0. Consistently, for this case, we implement chiA instead of chiA/dM
-    // in LALSimIMRSpinEOBFactorizedWaveform.c.
-    double c;
-    if ((m1 != m2) || (sign == 1))
-        c = pow(x2, l + epsilon - 1) + sign * pow(x1, l + epsilon - 1);
-    else
-    {
-        if (l == 2)
-            c = -1.0;
-        else if (l == 3)
-            c = -1.0;
-        else if (l == 4)
-            c = -0.5;
-        else if (l == 5)
-            c = -0.5;
-        else
-            c = 0.0;
-    }
-
-    // Eqs 5 and 6. Dependent on the value of epsilon (parity), we get different n
-    double mult1, mult2;
-    if (epsilon == 0)
-    {
-        n = I * (double)m;
-         //n = pow(n, (double)l);
-        for (int li = 0; li < l; li += 1) n *= n;
-       
-
-        mult1 = 8.0 * PI / factorial2(2 * l + 1);
-        mult2 = ((l + 1) * (l + 2)) / (l * (l - 1));
-        mult2 = sqrt(mult2);
-
-        n *= mult1;
-        n *= mult2;
-    }
-
-    else if (epsilon == 1)
-    {
-        n = I * (double)m;
-        //n = pow(n, (double)l);
-        for (int li = 0; li < l; li += 1) n *= n;
-        n = -n;
-
-        mult1 = 16.0 * PI / factorial2(2 * l + 1);
-
-        mult2 = (2 * l + 1) * (l + 2) * (l * l - m * m);
-        mult2 /= (2 * l - 1) * (l + 1) * l * (l - 1);
-        mult2 = sqrt(mult2);
-
-        n *= I * mult1;
-        n *= mult2;
-    }
-
-    cmplx prefix = n * eta * c;
-    return prefix;
-}
 
 CUDA_KERNEL
-void EOBComputeNewtonMultipolePrefixes(cmplx *prefixes, double *m1, double *m2, int ell_max, int numSys)
+void IC_cons_kernel(double *res, double *x, double *args, double *additionalArgs, double *grad_out, int numSys)
 {
     int start, increment;
-#ifdef __CUDACC__
+    #ifdef __CUDACC__
     start = threadIdx.x + blockDim.x * blockIdx.x;
     increment = gridDim.x * blockDim.x;
 #else
@@ -771,29 +583,21 @@ void EOBComputeNewtonMultipolePrefixes(cmplx *prefixes, double *m1, double *m2, 
 #endif
     for (int bin_i = start; bin_i < numSys; bin_i += increment)
     {
-        double m1_i = m1[bin_i];
-        double m2_i = m1[bin_i];
-        int lm_index = 0;
-        for (int l = 2; l < ell_max + 1; l += 1)
-        {
-            for (int m = 1; m < l + 1; m += 1)
-            {
-                prefixes[lm_index * numSys + bin_i] = CalculateThisMultipolePrefix(m1_i, m2_i, l, m);
-                lm_index += 1;
-            }
-        }
+        IC_cons(res, x, args, additionalArgs, grad_out, numSys, bin_i);
     }
 }
 
-void EOBComputeNewtonMultipolePrefixes_wrap(cmplx *prefixes, double *m1, double *m2, int ell_max, int numSys)
+void IC_cons_wrap(double *res, double *x, double *args, double *additionalArgs, double *grad_out, int numSys)
 {
-#ifdef __CUDACC__
-    EOBComputeNewtonMultipolePrefixes<<<numSys, NUM_THREADS_EOB>>>(prefixes, m1, m2, ell_max, numSys);
+    #ifdef __CUDACC__
+    int num_blocks = (int)std::ceil((numSys + BLOCK - 1) / BLOCK);
+    IC_cons_kernel<<<num_blocks, BLOCK>>>(res, x, args, additionalArgs, grad_out, numSys);
     cudaDeviceSynchronize();
     gpuErrchk(cudaGetLastError());
 #else
-    EOBComputeNewtonMultipolePrefixes(prefixes, m1, m2, ell_max, numSys);
+    IC_cons_kernel(res, x, args, additionalArgs, grad_out, numSys);
 #endif
+    
 }
 
 CUDA_CALLABLE_MEMBER
@@ -1191,14 +995,511 @@ typedef struct FacWaveformCoeffsTag
     double rho81v2;
 } FacWaveformCoeffs;
 
+
+#include "math_constants.h"
+
+// define lgam, using CUDA's lgamma as done for cupyx.scipy.special.gammaln
+CUDA_CALLABLE_MEMBER double lgam(double x)
+{
+    if (isinf(x) && x < 0) {
+        return -1.0 / 0.0;
+    } else {
+        return lgamma(x);
+    }
+}
+
+/*
+ * Pochhammer symbol (a)_m = gamma(a + m) / gamma(a)
+ */
+// include for CUDART_NAN, CUDART_INF
+
+CUDA_CALLABLE_MEMBER double is_nonpos_int(double x)
+{
+    return x <= 0 && x == ceil(x) && fabs(x) < 1e13;
+}
+
+CUDA_CALLABLE_MEMBER double gammasgn(double x)
+{
+    double fx;
+    if (isnan(x)) {
+      return x;
+    }
+    if (x > 0) {
+        return 1.0;
+    }
+    else {
+        fx = floor(x);
+        if (x - fx == 0.0) {
+            return 0.0;
+        }
+        else if ((int)fx % 2) {
+            return -1.0;
+        }
+        else {
+            return 1.0;
+        }
+    }
+}
+CUDA_CALLABLE_MEMBER double poch(double a, double m)
+{
+    double r;
+    r = 1.0;
+    /*
+     * 1. Reduce magnitude of `m` to |m| < 1 by using recurrence relations.
+     *
+     * This may end up in over/underflow, but then the function itself either
+     * diverges or goes to zero. In case the remainder goes to the opposite
+     * direction, we end up returning 0*INF = NAN, which is OK.
+     */
+    /* Recurse down */
+    while (m >= 1.0) {
+        if (a + m == 1) {
+            break;
+        }
+        m -= 1.0;
+        r *= (a + m);
+        if (!isfinite(r) || r == 0) {
+            break;
+        }
+    }
+    /* Recurse up */
+    while (m <= -1.0) {
+        if (a + m == 0) {
+            break;
+        }
+        r /= (a + m);
+        m += 1.0;
+        if (!isfinite(r) || r == 0) {
+            break;
+        }
+    }
+    /*
+     * 2. Evaluate function with reduced `m`
+     *
+     * Now either `m` is not big, or the `r` product has over/underflown.
+     * If so, the function itself does similarly.
+     */
+    if (m == 0) {
+        /* Easy case */
+        return r;
+    }
+    else if (a > 1e4 && fabs(m) <= 1) {
+        /* Avoid loss of precision */
+        return r * pow(a, m) * (
+            1
+            + m*(m-1)/(2*a)
+            + m*(m-1)*(m-2)*(3*m-1)/(24*a*a)
+            + m*m*(m-1)*(m-1)*(m-2)*(m-3)/(48*a*a*a)
+            );
+    }
+    /* Check for infinity */
+    if (is_nonpos_int(a + m) && !is_nonpos_int(a) && a + m != m) {
+        return CUDART_INF;
+    }
+    /* Check for zero */
+    if (!is_nonpos_int(a + m) && is_nonpos_int(a)) {
+        return 0;
+    }
+    return r * exp(lgam(a + m) - lgam(a)) * gammasgn(a + m) * gammasgn(a);
+}
+
+
+// CUDA C++ translation of code from:
+// https://github.com/scipy/scipy/blob/master/scipy/special/specfun/specfun.f
+/*
+ *  Purpose: Compute Psi function
+ *   Input :  x  --- Argument of psi(x)
+ */
+CUDA_CALLABLE_MEMBER double psi_spec(double x)
+{
+    double xa = fabs(x);
+    double EL = 0.5772156649015329;  // Euler-Mascheroni constant
+    double s = 0.;
+    double ps;
+    int n = 0;
+    if ((x - (int)x == 0.) && (x <= 0.))
+    {
+        return CUDART_INF;
+    } else if (xa - (int)xa == 0.) {
+        n = (int) xa;
+        for (int k=1; k <= n - 1; k++)
+        {
+           s += 1.0/k;
+        }
+        ps = -EL + s;
+    } else if ((xa - 0.5) - (int)(xa - 0.5) == 0.) {
+        n = (int)(xa - 0.5);
+        for (int k=1; k <= n; k++)
+        {
+           s += 1.0/(2.0*k - 1.0);
+        }
+        ps = -EL + 2.0 * s - 1.386294361119891;
+    } else {
+        if (xa < 10.0)
+        {
+            n = 10 - (int)(xa);
+            for (int k=1; k < n; k++)
+            {
+               s += 1.0/(xa + k);
+            }
+            xa += (double)n;
+        }
+        double x2 = 1.0 / (xa*xa);
+        double a1 = -.8333333333333e-01;
+        double a2 = .83333333333333333e-02;
+        double a3 = -.39682539682539683e-02;
+        double a4 = .41666666666666667e-02;
+        double a5 = -.75757575757575758e-02;
+        double a6 = .21092796092796093e-01;
+        double a7 = -.83333333333333333e-01;
+        double a8 = .44325980392156860;
+        ps = log(xa) - 0.5/xa + x2*(((((((a8*x2 + a7)*x2 +
+             a6)*x2 + a5)*x2 + a4)*x2 + a3)*x2 + a2)*x2 + a1);
+        ps -= s;
+    }
+    if (x < 0.) {
+        ps = ps - PI*cos(PI*x)/sin(PI*x) - 1.0/x;
+    }
+    return ps;
+}
+/*
+ *       Purpose: Compute gamma function Gamma(x)
+ *       Input :  x  --- Argument of Gamma(x)
+ *                      ( x is not equal to 0,-1,-2,...)
+ *       Output:  GA --- Gamma(x)
+ */
+CUDA_CALLABLE_MEMBER double gamma2(double x)
+{
+    double ga;
+    double G[26] = {1.0, 0.5772156649015329,
+                   -0.6558780715202538, -0.420026350340952e-1,
+                    0.1665386113822915,-.421977345555443e-1,
+                    -.96219715278770e-2, .72189432466630e-2,
+                    -.11651675918591e-2, -.2152416741149e-3,
+                     .1280502823882e-3, -.201348547807e-4,
+                    -.12504934821e-5, .11330272320e-5,
+                    -.2056338417e-6, .61160950e-8,
+                     .50020075e-8, -.11812746e-8,
+                     .1043427e-9, .77823e-11,
+                    -.36968e-11, .51e-12,
+                    -.206e-13, -.54e-14, .14e-14, .1e-15};
+    int k;
+    if ((x - (int)x) == 0.)
+    {
+        if (x > 0.)
+        {
+            ga = 1.0;
+            for (k=2; k < x; k++)
+            {
+                ga *= k;
+            }
+        } else
+        {
+            ga = CUDART_INF;
+        }
+    }
+    else
+    {
+        double r = 1.0;
+        double z = fabs(x);
+        if (z > 1.0){
+            int m = (int)z;
+            for (k=1; k<=m; k++)
+            {
+                r *= (z - k);
+            }
+            z -= m;
+        } else {
+            z = x;
+        }
+        double gr = G[24];
+        for (k=25; k>=1; k--)
+        {
+            gr = gr*z + G[k];
+        }
+        ga = 1.0 / (gr * z);
+        if (fabs(x) > 1.0)
+        {
+            ga *= r;
+            if (x < 0.0)
+            {
+                ga = -PI / (x*ga*sin(PI*x));
+            }
+        }
+    }
+    return ga;
+}
+/*
+ *     Purpose: Compute the associated Legendre function
+ *              Pmv(x) with an integer order and an arbitrary
+ *              nonnegative degree v
+ *     Input :  x   --- Argument of Pm(x)  ( -1 <= x <= 1 )
+ *              m   --- Order of Pmv(x)
+ *              v   --- Degree of Pmv(x)
+ */
+CUDA_CALLABLE_MEMBER double lpmv0(double v, double m, double x)
+{
+    double pmv, r;
+    int j, k;
+    double EL = 0.5772156649015329;  // Euler-Mascheroni constant
+    double EPS = 1.0e-14;
+    int nv = (int)v;
+    double v0 = v - nv;
+    if ((x == -1.0) && (v != nv))
+    {
+        if (m == 0)
+            return -CUDART_INF;
+        else
+            return CUDART_INF;
+    }
+    double c0 = 1.0;
+    if (m != 0)
+    {
+        double rg = v*(v + m);
+        for (j=1; j < m; j++)
+        {
+            rg *= (v*v - j*j);
+        }
+        double xq = sqrt(1.0 - x*x);
+        double r0 = 1.0;
+        for (j=1; j <= m; j++)
+        {
+            r0 *= 0.5*xq/j;
+        }
+        c0 = r0*rg;
+    }
+    if (v0 == 0.)
+    {
+        // DLMF 14.3.4, 14.7.17, 15.2.4
+        pmv = 1.0;
+        r = 1.0;
+        for (k=1; k <= nv - m; k++)
+        {
+            r *= 0.5*(-nv + m + k - 1.0)*(nv + m + k)/(k*(k + m))*(1.0 + x);
+            pmv += r;
+        }
+        pmv *= c0;
+        if ((nv % 2) == 1)
+        {
+            pmv = -pmv;
+        }
+    }
+    else
+    {
+        if (x >= -0.35)
+        {
+            // DLMF 14.3.4, 15.2.1
+            pmv = 1.0;
+            r = 1.0;
+            for (k = 1; k <= 100; k++)
+            {
+                 r *= 0.5*(-v + m + k - 1.0)*(v + m + k)/(k*(m + k))*(1.0 - x);
+                 pmv += r;
+                 if ((k > 12) & (fabs(r/pmv) < EPS)){
+                    break;
+                 }
+            }
+            pmv *= c0;
+            if (((int)m % 2) == 1)
+            {
+                pmv = -pmv;
+            }
+        }
+        else
+        {
+            // DLMF 14.3.5, 15.8.10
+            double vs = sin(v * PI) / PI;
+            double pv0 = 0.0;
+            double r2;
+            if (m != 0)
+            {
+                double qr = sqrt((1.0 - x)/(1.0 + x));
+                r2 = 1.0;
+                for (j = 1; j <= m; j++)
+                {
+                    r2 *= qr*j;
+                }
+                double s0 = 1.0;
+                double r1 = 1.0;
+                for (k = 1; k < m; k++)
+                {
+                    r1=0.5*r1*(-v + k - 1)*(v + k)/(k*(k - m))*(1.0 + x);
+                    s0 += r1;
+                }
+                pv0 = -vs*r2/m*s0;
+            }
+            double psv = psi_spec(v);
+            double pa = 2.0*(psv + EL) + PI/tan(PI*v) + 1.0/v;
+            double s1 = 0.0;
+            for (j = 1; j <= m; j++)
+            {
+                s1 += (j*j + v*v)/(j*(j*j - v*v));
+            }
+            pmv = pa + s1 - 1.0/(m - v) + log(0.5*(1.0 + x));
+            r = 1.0;
+            for (k = 1; j <= 100; k++)
+            {
+                r *= 0.5*(-v + m + k-1.0)*(v + m + k)/(k*(k + m))*(1.0 + x);
+                double s = 0.0;
+                for (j = 1; j <= m; j++)
+                {
+                    double kjsq = (k + j) * (k + j);
+                    s += (kjsq + v*v)/((k + j)*(kjsq - v*v));
+                }
+                double s2 = 0.0;
+                for (j = 1; j <= k; j++)
+                {
+                    s2 += 1.0/(j*(j*j - v*v));
+                }
+                double pss = pa + s + 2.0*v*v*s2 - 1.0/(m + k - v)
+                             + log(0.5*(1.0 + x));
+                r2 = pss*r;
+                pmv += r2;
+                if (fabs(r2/pmv) < EPS)
+                {
+                    break;
+                }
+            }
+            pmv = pv0 + pmv*vs*c0;
+        }
+    }
+    return pmv;
+}
+/*       Purpose: Compute the associated Legendre function
+ *                Pmv(x) with an integer order and an arbitrary
+ *                degree v, using recursion for large degrees
+ *       Input :  x   --- Argument of Pm(x)  ( -1 <= x <= 1 )
+ *                m   --- Order of Pmv(x)
+ *                v   --- Degree of Pmv(x)
+ *       Output:  PMV --- Pmv(x)
+ */
+CUDA_CALLABLE_MEMBER double lpmv(double v, int m, double x)
+{
+    double pmv;
+    int j;
+    if ((x == -1.0) && (v != (int)v))
+    {
+        if (m == 0)
+        {
+            return -CUDART_INF;
+        } else
+        {
+            return CUDART_INF;
+        }
+    }
+    double vx = v;
+    double mx = m;
+    // DLMF 14.9.5
+    if (v < 0)
+    {
+        vx = -vx - 1;
+    }
+    int neg_m = 0;
+    if (m < 0)
+    {
+        if (((vx + m + 1) > 0) || (vx != (int)vx))
+        {
+            neg_m = 1;
+            mx = -m;
+        }
+        else
+        {
+            // We don't handle cases where DLMF 14.9.3 doesn't help
+            return CUDART_NAN;
+        }
+    }
+    int nv = (int)vx;
+    double v0 = vx - nv;
+    if ((nv > 2) && (nv > mx))
+    {
+        // Up-recursion on degree, AMS 8.5.3 / DLMF 14.10.3
+        double p0 = lpmv0(v0 + mx, mx, x);
+        double p1 = lpmv0(v0 + mx + 1, mx, x);
+        pmv = p1;
+        for (j = mx + 2; j <= nv; j++)
+        {
+          pmv = ((2*(v0 + j) - 1)*x*p1 - (v0 + j - 1 + mx)*p0) / (v0 + j - mx);
+          p0 = p1;
+          p1 = pmv;
+        }
+    }
+    else
+    {
+        pmv = lpmv0(vx, mx, x);
+    }
+    if ((neg_m != 0) && (fabs(pmv) < 1.0e300))
+    {
+        double g1 = gamma2(vx - mx + 1);
+        double g2 = gamma2(vx + mx + 1);
+        pmv = pmv * g1/g2 * pow(-1, mx);
+    }
+    return pmv;
+}
+// pmv_wrap as in
+// https://github.com/scipy/scipy/blob/master/scipy/special/specfun_wrappers.c
+CUDA_CALLABLE_MEMBER  double pmv_wrap(double m, double v, double x){
+  int int_m;
+  double out;
+  if (m != floor(m))
+  {
+      return CUDART_NAN;
+  }
+  int_m = (int) m;
+  out = lpmv(v, int_m, x);
+  // should raise an overflow warning here on INF
+  return out;
+}
+
+
+// from scipy/special/sph_harm.pxd
+CUDA_CALLABLE_MEMBER cmplx sph_harm(int m, int n, double theta, double phi)
+{
+    double x, prefactor;
+    cmplx val;
+    int mp;
+    x = cos(phi);
+    if (abs(m) > n)
+    {
+        // sf_error.error("sph_harm", sf_error.ARG,
+        //                "m should not be greater than n")
+        return CUDART_NAN;
+    }
+    if (n < 0)
+    {
+        // sf_error.error("sph_harm", sf_error.ARG, "n should not be negative")
+        return CUDART_NAN;
+    }
+    if (m < 0)
+    {
+        mp = -m;
+        prefactor = poch(n + mp + 1, -2 * mp);
+        if ((mp % 2) == 1)
+        {
+            prefactor = -prefactor;
+        }
+    }
+    else
+    {
+        mp = m;
+    }
+    val = pmv_wrap(mp, n, x);
+    if (m < 0)
+    {
+        val *= prefactor;
+    }
+    val *= sqrt((2*n + 1) / 4.0 / PI);
+    val *= sqrt(poch(n + m + 1, -2 * m));
+    cmplx exponent(0, m * theta);
+    val *= exp(exponent);
+    return val;
+}
+
 CUDA_CALLABLE_MEMBER
 cmplx EOBFluxCalculateNewtonianMultipole(double x, double phi, int l, int m, cmplx param)
 {
     cmplx out(1.0, 0.0);
     return out;
 }
-
-#include "math_constants.h"
 
 
 /* Evaluate a polynomial with real coefficients at a complex point.
@@ -1774,10 +2075,27 @@ cmplx EOBGetSpinFactorizedWaveform(
 }
 
 CUDA_CALLABLE_MEMBER
+cmplx fast_ylm(int m, int n)
+{
+    double ylms[9][9] = {{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}, {0.0, 0.3454941494713355, 0.0, 0.3231801841141506, 4.055554344078009e-17, 0.32028164857621516, 8.000317029649286e-17, 0.31937046138540076, 1.1920022960993937e-16}, {0.0, 0.0, 0.3862742020231896, 0.0, 0.33452327177864466, 4.447491653287784e-17, 0.32569524293385776, 8.531070568407408e-17, 0.32254835519288305}, {0.0, 0.0, 0.0, 0.4172238236327842, 0.0, 0.34594371914684025, 4.8749755603568385e-17, 0.331899519333737, 9.130149959227967e-17}, {0.0, 0.0, 0.0, 0.0, 0.4425326924449826, 0.0, 0.3567812628539981, 5.310595586255289e-17, 0.3382915688890245}, {0.0, 0.0, 0.0, 0.0, 0.0, 0.46413220344085826, 0.0, 0.3669287245764378, 5.745136532071183e-17}, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.48308411358006625, 0.0, 0.3764161087284946}, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5000395635705508, 0.0}, {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.5154289843972844}}; 
+    return ylms[-m][n];
+}
+
+
+CUDA_CALLABLE_MEMBER
 cmplx EOBFluxCalculateNewtonianMultipoleAbs(double x, double phi, int l, int m, cmplx param)
 {
-    cmplx out(1.0, 0.0);
-    return out;
+    int epsilon = (l + m) % 2;
+    
+    cmplx y = 0.0;
+    // Calculate the necessary Ylm
+    //cmplx ylm = sph_harm(-m, l - epsilon, 0, pi / 2);
+    // y = cabs(ylm);
+    y = fast_ylm(-m,l-epsilon);
+    cmplx multipole = param * pow(x, ((l + epsilon) / 2.0));
+    multipole *= y;
+    // print(f"({l},{m}) at {x}, phi={phi}, {multipole}, {y}")
+    return multipole;
 }
 
 #include "math.h"
@@ -2571,7 +2889,7 @@ double EOBSpinFactorizedFlux(double *values, double m_1, double m_2, double chiS
         for (int m = 1; m < l + 1; m += 1)
         {
             ind_real = (prefixes_start_ind + 2 * ind_lm + 0) * numSys + i;
-            ind_imag = (prefixes_start_ind + 2 * ind_lm + 0) * numSys + i;
+            ind_imag = (prefixes_start_ind + 2 * ind_lm + 1) * numSys + i;
             newtonian_prefix = cmplx(newtonian_prefixes[ind_real], newtonian_prefixes[ind_imag]);
             hLM = EOBFluxGetSpinFactorizedWaveform(
                 r, phi, pp, v, H, l, m, hCoeffs, newtonian_prefix, eta, vPhi, vPhi2, omega, v2, h22_calib);
@@ -2581,6 +2899,7 @@ double EOBSpinFactorizedFlux(double *values, double m_1, double m_2, double chiS
             // Eq .13
             flux += ((m * m) * omegaSq * pow(gcmplx::abs(hLM), 2));
             ind_lm += 1;
+            //if (i == 0) printf("%d %d %.12e %.12e %.12e %.12e %.12e  \n", l, m, newtonian_prefix.real(), newtonian_prefix.imag(), hLM.real(), hLM.imag(), flux);
         }
     }
     // print(f"flux before:{flux}, after {flux/PI / 8.0}")
@@ -2600,11 +2919,11 @@ void RR_force(double *force_out, double *grad_out, double *args, double *additio
     int m_2_ind = 1 * numSys + i;
     int chi_1_ind = 2 * numSys + i;
     int chi_2_ind = 3 * numSys + i;
-    int K_ind = 4 * numSys + i;
-    int d5_ind = 5 * numSys + i;
-    int dSO_ind = 6 * numSys + i;
-    int dSS_ind = 7 * numSys + i;
-    int omega_ind = 8 * numSys + i;
+    int omega_ind = 4 * numSys + i;
+    int K_ind = 5 * numSys + i;
+    int d5_ind = 6 * numSys + i;
+    int dSO_ind = 7 * numSys + i;
+    int dSS_ind = 8 * numSys + i;
     int h22_calib_ind = 9 * numSys + i;
     int prefixes_start_ind = 10;
 
@@ -2612,11 +2931,11 @@ void RR_force(double *force_out, double *grad_out, double *args, double *additio
     double m_2 = additionalArgs[m_2_ind];
     double chi_1 = additionalArgs[chi_1_ind];
     double chi_2 = additionalArgs[chi_2_ind];
+    double omega = additionalArgs[omega_ind];
     double K = additionalArgs[K_ind];
     double d5 = additionalArgs[d5_ind];
     double dSO = additionalArgs[dSO_ind];
     double dSS = additionalArgs[dSS_ind];
-    double omega = additionalArgs[omega_ind];
     double h22_calib = additionalArgs[h22_calib_ind];
     double *prefixes = additionalArgs;
 
@@ -2652,7 +2971,7 @@ void RR_force(double *force_out, double *grad_out, double *args, double *additio
     double tplspin = (1.0 - 2.0 * nu) * chiS + (m_1 - m_2) / (m_1 + m_2) * chiA;
 
     double flux = EOBSpinFactorizedFlux(args, m_1, m_2, chiS, chiA, tplspin, omega, prefixes, prefixes_start_ind, nu, H_val, 8, vPhi, h22_calib, numSys, i);
-
+    
     flux /= nu;
     double f_over_om = flux / omega;
     double Fr = -pr / pphi * f_over_om;
@@ -2660,55 +2979,114 @@ void RR_force(double *force_out, double *grad_out, double *args, double *additio
 
     force_out[0 * numSys + i] = Fr;
     force_out[1 * numSys + i] = Fphi;
+
+    //printf("%.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e \n", tplspin, flux, nu, f_over_om, H_val, vPhi, chiS, chiA);
+
+}
+
+CUDA_KERNEL
+void RR_force_kernel(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys)
+{
+    int start, increment;
+    #ifdef __CUDACC__
+    start = threadIdx.x + blockDim.x * blockIdx.x;
+    increment = gridDim.x * blockDim.x;
+#else
+    start = 0;
+    increment = 1;
+// pragma omp parallel for
+#endif
+    for (int bin_i = start; bin_i < numSys; bin_i += increment)
+    {
+        RR_force(force_out, grad_out, args, additionalArgs, numSys, bin_i);
+    }
+}
+
+void RR_force_wrap(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys)
+{
+    #ifdef __CUDACC__
+    int num_blocks = (int)std::ceil((numSys + BLOCK - 1) / BLOCK);
+    RR_force_kernel<<<num_blocks, BLOCK>>>(force_out, grad_out, args, additionalArgs, numSys);
+    cudaDeviceSynchronize();
+    gpuErrchk(cudaGetLastError());
+#else
+    RR_force_kernel(force_out, grad_out, args, additionalArgs, numSys);
+#endif
+    
 }
 
 
 CUDA_CALLABLE_MEMBER
-double IC_diss(double pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out)
+double IC_diss(double pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys, int i)
 {
-#ifdef __CUDACC__
-    int i = threadIdx.x;
-#else
-    int i = 0;
-#endif
-
-    args[2 * BLOCK + i] = pr;
+    args[2 * numSys + i] = pr;
 
     // just a place holder
-    grad_Ham_align_AD_single(args, grad_out, additionalArgs, BLOCK, i);
-    hessian_Ham_align_AD_single(args, hess_out, additionalArgs, BLOCK, i);
-    RR_force(force_out, grad_temp_force, args, additionalArgs, BLOCK, i);
+    grad_Ham_align_AD_single(args, grad_out, additionalArgs, numSys, i);
+    hessian_Ham_align_AD_single(args, hess_out, additionalArgs, numSys, i);
 
-    double d2Hdr2 = hess_out[0 * BLOCK + i];
-    double d2HdrdL = hess_out[12 * BLOCK + i]; // [3,0]
+    // adjust omega
+    int omega_ind = 4 * numSys + i;
+    additionalArgs[omega_ind] = grad_out[3 * numSys + i];
+
+    RR_force(force_out, grad_temp_force, args, additionalArgs, numSys, i);
+
+    double d2Hdr2 = hess_out[0 * numSys + i];
+    double d2HdrdL = hess_out[12 * numSys + i]; // [3,0]
     double dLdr = -d2Hdr2 / d2HdrdL;
 
-    double rdot = force_out[1 * BLOCK + i] / dLdr;
-    double dHdpr = grad_out[2 * BLOCK + i];
+    double rdot = force_out[1 * numSys + i] / dLdr;
+    double dHdpr = grad_out[2 * numSys + i];
 
     return rdot - dHdpr;
 }
 
-CUDA_CALLABLE_MEMBER
-void false_position_step(double *res, double *bounds, double *fbounds, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out)
-{
-#ifdef __CUDACC__
-    int i = threadIdx.x;
-#else
-    int i = 0;
-#endif
 
+CUDA_KERNEL
+void IC_diss_kernel(double* out, double *pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys)
+{
+    int start, increment;
+    #ifdef __CUDACC__
+    start = threadIdx.x + blockDim.x * blockIdx.x;
+    increment = gridDim.x * blockDim.x;
+#else
+    start = 0;
+    increment = 1;
+// pragma omp parallel for
+#endif
+    for (int bin_i = start; bin_i < numSys; bin_i += increment)
+    {
+        out[bin_i] = IC_diss(pr[bin_i], args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, bin_i);
+    }
+}
+
+void IC_diss_wrap(double* out, double *pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys)
+{
+    #ifdef __CUDACC__
+    int num_blocks = (int)std::ceil((numSys + BLOCK - 1) / BLOCK);
+    IC_diss_kernel<<<num_blocks, BLOCK>>>(out, pr, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys);
+    cudaDeviceSynchronize();
+    gpuErrchk(cudaGetLastError());
+#else
+    IC_diss_kernel(out, pr, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys);
+#endif
+    
+}
+
+CUDA_CALLABLE_MEMBER
+void false_position_step(double *res, double *bounds, double *fbounds, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys, int i)
+{
     // FILL ARGS BEFORE
 
-    double a = bounds[0 * BLOCK + i];
-    double b = bounds[1 * BLOCK + i];
+    double a = bounds[0 * numSys + i];
+    double b = bounds[1 * numSys + i];
 
-    double f_a = fbounds[0 * BLOCK + i];
-    double f_b = fbounds[1 * BLOCK + i];
+    double f_a = fbounds[0 * numSys + i];
+    double f_b = fbounds[1 * numSys + i];
 
     double c = (a * f_b - b * f_a) / (f_b - f_a);
 
-    double f_c = IC_diss(c, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out);
+    double f_c = IC_diss(c, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, i);
     if (((f_b < 0.0) && (f_c < 0.0)) || ((f_b >= 0.0) && (f_c >= 0.0)))
     {
         b = c;
@@ -2720,41 +3098,36 @@ void false_position_step(double *res, double *bounds, double *fbounds, double *a
         f_a = f_c;
     }
 
-    res[0 * BLOCK + i] = c;
-    res[1 * BLOCK + i] = f_c;
+    res[0 * numSys + i] = c;
+    res[1 * numSys + i] = f_c;
 
-    bounds[0 * BLOCK + i] = a;
-    bounds[1 * BLOCK + i] = b;
+    bounds[0 * numSys + i] = a;
+    bounds[1 * numSys + i] = b;
 
-    fbounds[0 * BLOCK + i] = f_a;
-    fbounds[1 * BLOCK + i] = f_b;
+    fbounds[0 * numSys + i] = f_a;
+    fbounds[1 * numSys + i] = f_b;
 }
 
 CUDA_CALLABLE_MEMBER
-double root_find_scalar(double *res, double *bounds, double *fbounds, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int max_iter, double err)
+double root_find_scalar(double *res, double *bounds, double *fbounds, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int max_iter, double err, int numSys, int i)
 {
-#ifdef __CUDACC__
-    int i = threadIdx.x;
-#else
-    int i = 0;
-#endif
 
     int it = 0;
     double f_c = 1.0;
 
-    double a = bounds[0 * BLOCK + i];
-    double b = bounds[1 * BLOCK + i];
+    double a = bounds[0 * numSys + i];
+    double b = bounds[1 * numSys + i];
 
-    fbounds[0 * BLOCK + i] = IC_diss(a, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out);
-    fbounds[1 * BLOCK + i] = IC_diss(b, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out);
+    fbounds[0 * numSys + i] = IC_diss(a, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, i);
+    fbounds[1 * numSys + i] = IC_diss(b, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, i);
 
     double c = 0.0;
     int check = 0;
     while (it < max_iter)
     {
-        false_position_step(res, bounds, fbounds, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out);
-        c = res[0 * BLOCK + i];
-        f_c = res[1 * BLOCK + i];
+        false_position_step(res, bounds, fbounds, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, i);
+        c = res[0 * numSys + i];
+        f_c = res[1 * numSys + i];
         it += 1;
 
         if ((it > max_iter) || (abs(f_c) < err))
@@ -2765,9 +3138,6 @@ double root_find_scalar(double *res, double *bounds, double *fbounds, double *ar
     }
     return c;
 }
-
-#define NARGSMAX 4
-#define NADDARGSMAX 80
 
 CUDA_KERNEL
 void root_find_scalar_all(double *pr_res, double *start_bounds, double *argsIn, double *additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args)
@@ -2821,7 +3191,7 @@ void root_find_scalar_all(double *pr_res, double *start_bounds, double *argsIn, 
         for (int jj = 0; jj < num_add_args; jj += 1)
             additionalArgs[jj * BLOCK + i] = additionalArgsIn[jj * numBinAll + bin_i];
 
-        double c_res_bin_i = root_find_scalar(res, bounds, fbounds, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, max_iter, err);
+        double c_res_bin_i = root_find_scalar(res, bounds, fbounds, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, max_iter, err, BLOCK, i);
 
         pr_res[bin_i] = c_res_bin_i;
     }
@@ -2866,15 +3236,10 @@ void invert_jac_inplace(double *Jac, int n)
 
 #define epsilon 2.22e-16
 CUDA_CALLABLE_MEMBER
-void discrete_newton_step(double *x, double *x_temp, double *temp_res1, double *temp_res2, double *args, double *additionalArgs, double *grad_out, double *Jac, int n)
+void discrete_newton_step(double *x, double *x_temp, double *temp_res1, double *temp_res2, double *args, double *additionalArgs, double *grad_out, double *Jac, int n, int numSys, int i)
 {
-#ifdef __CUDACC__
-    int i = threadIdx.x;
-#else
-    int i = 0;
-#endif
 
-    IC_cons(temp_res1, x, args, additionalArgs, grad_out);
+    IC_cons(temp_res1, x, args, additionalArgs, grad_out, numSys, i);
 
     for (int k = 0; k < n; k += 1)
     {
@@ -2882,14 +3247,14 @@ void discrete_newton_step(double *x, double *x_temp, double *temp_res1, double *
         {
             double delta_j = sqrt(epsilon) * abs(x[j]);
 
-            x_temp[0 * BLOCK + i] = x[0 * BLOCK + i];
-            x_temp[1 * BLOCK + i] = x[1 * BLOCK + i];
+            x_temp[0 * numSys + i] = x[0 * numSys + i];
+            x_temp[1 * numSys + i] = x[1 * numSys + i];
 
-            x_temp[j * BLOCK + i] += delta_j;
+            x_temp[j * numSys + i] += delta_j;
 
             // TODO: if to slow maybe switch order??
-            IC_cons(temp_res2, x_temp, args, additionalArgs, grad_out);
-            Jac[(k * n + j) * BLOCK + i] = (temp_res2[k * BLOCK + i] - temp_res1[k * BLOCK + i]) / delta_j;
+            IC_cons(temp_res2, x_temp, args, additionalArgs, grad_out, numSys, i);
+            Jac[(k * n + j) * numSys + i] = (temp_res2[k * numSys + i] - temp_res1[k * numSys + i]) / delta_j;
         }
     }
 
@@ -2909,14 +3274,8 @@ void discrete_newton_step(double *x, double *x_temp, double *temp_res1, double *
 }
 
 CUDA_CALLABLE_MEMBER
-void root_find(double *x0, double *x1, double *x_temp, double *temp_res1, double *temp_res2, double *args, double *additionalArgs, double *grad_out, double *Jac, int n, int max_iter, double err)
+void root_find(double *x0, double *x1, double *x_temp, double *temp_res1, double *temp_res2, double *args, double *additionalArgs, double *grad_out, double *Jac, int n, int max_iter, double err, int numSys, int i)
 {
-#ifdef __CUDACC__
-    int i = threadIdx.x;
-#else
-    int i = 0;
-#endif
-
     int it = 0;
 
     bool flagRelErr = true;
@@ -2924,14 +3283,14 @@ void root_find(double *x0, double *x1, double *x_temp, double *temp_res1, double
     {
         for (int j = 0; j < n; j += 1)
         {
-            x1[j * BLOCK + i] = x0[j * BLOCK + i];
+            x1[j * numSys + i] = x0[j * numSys + i];
         }
-        discrete_newton_step(x1, x_temp, temp_res1, temp_res2, args, additionalArgs, grad_out, Jac, n);
+        discrete_newton_step(x1, x_temp, temp_res1, temp_res2, args, additionalArgs, grad_out, Jac, n, numSys, i);
 
         double rel_diff = 0.0;
         for (int j = 0; j < n; j += 1)
         {
-            double rel_diff_temp = abs(x1[j * BLOCK + i] - x0[j * BLOCK + i]) / x0[j * BLOCK + i];
+            double rel_diff_temp = abs(x1[j * numSys + i] - x0[j * numSys + i]) / x0[j * numSys + i];
 
             if (rel_diff_temp > rel_diff)
             {
@@ -2940,7 +3299,7 @@ void root_find(double *x0, double *x1, double *x_temp, double *temp_res1, double
         }
         for (int j = 0; j < n; j += 1)
         {
-            x0[j * BLOCK + i] = x1[j * BLOCK + i];
+            x0[j * numSys + i] = x1[j * numSys + i];
         }
         if (rel_diff < err)
         {
@@ -3004,7 +3363,7 @@ void root_find_all(double *xOut, double *x0In, double *argsIn, double *additiona
         for (int jj = 0; jj < num_add_args; jj += 1)
             additionalArgs[jj * BLOCK + i] = additionalArgsIn[jj * numBinAll + bin_i];
         // for (int jj = 0; jj < n; jj +=1) printf("%d %d %d %e\n", jj, i, BLOCK, x0[jj * BLOCK + i]);
-        root_find(x0, x1, x_temp, temp_res1, temp_res2, args, additionalArgs, grad_out, Jac, n, max_iter, err);
+        root_find(x0, x1, x_temp, temp_res1, temp_res2, args, additionalArgs, grad_out, Jac, n, max_iter, err, BLOCK, i);
 
         for (int j = 0; j < n; j += 1)
         {
@@ -3021,5 +3380,113 @@ void root_find_all_wrap(double *xOut, double *x0In, double *argsIn, double *addi
     gpuErrchk(cudaGetLastError());
 #else
     root_find_all(xOut, x0In, argsIn, additionalArgsIn, max_iter, err, numBinAll, n, num_args, num_add_args);
+#endif
+}
+
+
+
+CUDA_KERNEL
+void ODE_Ham_align_AD(double *x, double *argsIn, double *k, double *additionalArgsIn, int numSys)
+{ // C_grad_HTMalign_AC(double values[], int num_points, double ders[]){
+    int start, increment;
+
+    int num_args = 4;
+    int num_add_args = 80;
+
+#ifdef __CUDACC__
+    CUDA_SHARED double args[NARGSMAX * BLOCK];
+    CUDA_SHARED double additionalArgs[NADDARGSMAX * BLOCK];
+    CUDA_SHARED double grad_out[NARGSMAX * BLOCK];
+    CUDA_SHARED double grad_temp_force[NARGSMAX * BLOCK];
+    CUDA_SHARED double force_out[2 * BLOCK];
+#endif
+
+#ifdef __CUDACC__
+    start = threadIdx.x + blockIdx.x * blockDim.x;
+    increment = blockDim.x * gridDim.x;
+#else
+    start = 0;
+    increment = 1;
+#endif
+
+    for (int bin_i = start; bin_i < numSys; bin_i += increment)
+    {
+        #ifdef __CUDACC__
+        int i = threadIdx.x;
+        #else
+        int i = 0;
+        // TODO: remove BLOCK from here?
+        double args[NARGSMAX * BLOCK];
+        double additionalArgs[NADDARGSMAX * BLOCK];
+        double grad_out[NARGSMAX * BLOCK];
+        double grad_temp_force[NARGSMAX * BLOCK];
+        double force_out[2 * BLOCK];
+        #endif
+
+        for (int jj = 0; jj < num_args; jj += 1)
+            args[jj * BLOCK + i] = argsIn[jj * numSys + bin_i];
+        for (int jj = 0; jj < num_add_args; jj += 1)
+            additionalArgs[jj * BLOCK + i] = additionalArgsIn[jj * numSys + bin_i];
+        
+        int ode1 = 0 * BLOCK + i;
+        int ode2 = 1 * BLOCK + i;
+        int ode3 = 2 * BLOCK + i;
+        int ode4 = 3 * BLOCK + i;
+        
+        double r = args[ode1];
+        double phi = args[ode2];
+        double pr = args[ode3];
+        double pphi = args[ode4];
+
+        int omega_ind = 4 * BLOCK + i;
+        double omega = additionalArgs[omega_ind];
+
+        grad_Ham_align_AD_single(args, grad_out, additionalArgs, BLOCK, i);
+
+        
+        // Compute H Jacobian
+        double dHdr = grad_out[ode1];
+        double dHdphi = grad_out[ode2];
+        double dHdpr = grad_out[ode3];
+        double dHdpphi = grad_out[ode4];
+
+        // adjust omega
+        additionalArgs[omega_ind] = dHdpphi;
+
+        RR_force(force_out, grad_temp_force, args, additionalArgs, BLOCK, i);
+
+        // TODO: implement tortoise
+        // return array([dHdr, dHdphi, dHdpr, dHdpphi])
+
+        double Fr = force_out[ode1];
+        double Fphi = force_out[ode2];
+
+        double x_here = x[i];
+        //if (i == 0)
+          //  printf("%.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e \n", x_here, Fr, Fphi, dHdpr, dHdpphi, dHdr, dHdphi, omega, r, phi, pr, pphi);
+
+        int ode1_out = 0 * numSys + i;
+        int ode2_out = 1 * numSys + i;
+        int ode3_out = 2 * numSys + i;
+        int ode4_out = 3 * numSys + i;
+
+        k[ode1_out] = dHdpr;
+        k[ode2_out] = dHdpphi;
+        k[ode3_out] = -dHdr + Fr;
+        k[ode4_out] = -dHdphi + Fphi;
+        // deriv = np.array([grad[n],grad[n+1],-grad[0]+RR_f[0],-grad[1]+RR_f[1]])
+    }
+}
+
+void ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys)
+{
+#ifdef __CUDACC__
+    int num_blocks = (int)std::ceil((numSys + BLOCK - 1) / BLOCK);
+    ODE_Ham_align_AD<<<num_blocks, BLOCK>>>(x, arg, k, additionalArgs, numSys);
+
+    cudaDeviceSynchronize();
+    gpuErrchk(cudaGetLastError());
+#else
+    ODE_Ham_align_AD(x, arg, k, additionalArgs, numSys);
 #endif
 }

@@ -398,7 +398,7 @@ class DOPR853:
         scale[err == 0.0] = maxscale
 
         if self.xp.any(h == 0.0):
-            pbreakpoint()
+            breakpoint()
 
         accept_and_prev_reject = (previousReject & acceptable)
         h[accept_and_prev_reject] = h[accept_and_prev_reject] * self.xp.clip(scale[accept_and_prev_reject], -1e300, 1.0)
@@ -713,7 +713,7 @@ class DOPR853:
                 loopFlag = False
 
             jj += 1
-            
+            print("CHECKING", jj)
             #if jj >= 281:
             #    break
             #if ii % 1 == 0:

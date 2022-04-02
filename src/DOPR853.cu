@@ -231,7 +231,7 @@ void update_arg_and_x(
             {
                 ak_temp = ak_term[i * numEq + eq_i];
             }
-
+                
             arg[i * numEq + eq_i] = solOld[i * numEq + eq_i] + h_here * ak_temp;
         }
     }
@@ -317,6 +317,7 @@ void add_2d_term(
     {
         for (int i = 0; i < nargs; i += 1)
         {
+            
             term_out[i * numEq + eq_i] += factor * arr_in[i * numEq + eq_i];
         }
     }
@@ -375,7 +376,7 @@ void dormandPrinceSteps_wrap(
 
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c2, numEq, nargs, false);
     ODE_Ham_align_AD_wrap(xCurrent, arg, k2, additionalArgs, numEq);
-
+    
     // Step 3
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
     // a31 * k1 + a32 * k2
