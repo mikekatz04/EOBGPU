@@ -6,6 +6,9 @@ from bbhx.utils.utility import pointer_adjust
 
 assert sizeof(int) == sizeof(np.int32_t)
 
+cdef extern from "EOB.hh":
+    ctypedef void* SEOBNRv5 'SEOBNRv5'
+
 cdef extern from "DOPR853.hh":
     void dormandPrinceSteps_wrap(
         double* x,
@@ -27,7 +30,8 @@ cdef extern from "DOPR853.hh":
         double* ak_term_buffer,
         int nargs, 
         int numEq,
-        int num_add_args
+        int num_add_args,
+        SEOBNRv5 *ode_class
     );
 
     void error_wrap(
@@ -79,7 +83,8 @@ def dormandPrinceSteps(
         ak_term_buffer,
         nargs, 
         numEq,
-        num_add_args
+        num_add_args,
+        ode_class
     ):
 
     cdef size_t x_in = x
@@ -99,6 +104,7 @@ def dormandPrinceSteps(
     cdef size_t k9_in = k9
     cdef size_t k10_in = k10
     cdef size_t ak_term_buffer_in = ak_term_buffer
+    cdef size_t ode_class_in = ode_class.conceiled_ptr
 
     dormandPrinceSteps_wrap(
         <double*> x_in,
@@ -120,7 +126,8 @@ def dormandPrinceSteps(
         <double*> ak_term_buffer_in,
         nargs, 
         numEq,
-        num_add_args
+        num_add_args,
+        <SEOBNRv5 *>ode_class_in,
     )
 
 

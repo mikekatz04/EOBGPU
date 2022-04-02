@@ -23,7 +23,8 @@ void dormandPrinceSteps_wrap(
         double* ak_term_buffer,
         int nargs, 
         int numEq,
-        int num_add_args
+        int num_add_args,
+        SEOBNRv5 *ode_class
 );
 
 void error_wrap(

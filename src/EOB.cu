@@ -648,354 +648,6 @@ void RR_force_2PN(double *force_out, double *args, double *additionalArgs)
 }
 
 
-typedef struct FacWaveformCoeffsTag
-{
-    double delta22vh3;
-    double delta22vh6;
-    double delta22vh6S;
-    double delta22v8;
-    double delta22v8S;
-    double delta22vh9;
-    double delta22v5;
-    double delta22v6;
-    double delta22v6S;
-
-    double rho22v2;
-    double rho22v3;
-    double rho22v3S;
-    double rho22v4;
-    double rho22v4S;
-    double rho22v5;
-    double rho22v5S;
-    double rho22v6;
-    double rho22v6S;
-    double rho22v6l;
-    double rho22v7;
-    double rho22v7S;
-    double rho22v8;
-    double rho22v8S;
-    double rho22v8l;
-    double rho22v10;
-    double rho22v10l;
-
-    double delta21vh3;
-    double delta21vh6;
-    double delta21vh6S;
-    double delta21vh7;
-    double delta21vh7S;
-    double delta21vh9;
-    double delta21v5;
-    double delta21v7;
-
-    double rho21v1;
-    double rho21v2;
-    double rho21v2S;
-    double rho21v3;
-    double rho21v3S;
-    double rho21v4;
-    double rho21v4S;
-    double rho21v5;
-    double rho21v5S;
-    double rho21v6;
-    double rho21v6S;
-    double rho21v6l;
-    double rho21v7;
-    double rho21v7S;
-    double rho21v7l;
-    double rho21v7lS;
-    double rho21v8;
-    double rho21v8l;
-    double rho21v10;
-    double rho21v10l;
-
-    double f21v1;
-    double f21v1S;
-    double f21v3;
-    double f21v3S;
-    double f21v4;
-    double f21v5;
-    double f21v6;
-    double f21v7c;
-
-    double delta33vh3;
-    double delta33vh6;
-    double delta33vh6S;
-    double delta33vh9;
-    double delta33v5;
-    double delta33v7;
-
-    double rho33v2;
-    double rho33v3;
-    double rho33v4;
-    double rho33v4S;
-    double rho33v5;
-    double rho33v5S;
-    double rho33v6;
-    double rho33v6S;
-    double rho33v6l;
-    double rho33v7;
-    double rho33v7S;
-    double rho33v8;
-    double rho33v8l;
-    double rho33v10;
-    double rho33v10l;
-
-    double f33v3;
-    double f33v4;
-    double f33v5;
-    double f33v6;
-    double f33v3S;
-    double f33vh6;
-
-    double delta32vh3;
-    double delta32vh4;
-    double delta32vh4S;
-    double delta32vh6;
-    double delta32vh6S;
-    double delta32vh9;
-
-    double rho32v;
-    double rho32vS;
-    double rho32v2;
-    double rho32v2S;
-    double rho32v3;
-    double rho32v3S;
-    double rho32v4;
-    double rho32v4S;
-    double rho32v5;
-    double rho32v5S;
-    double rho32v6;
-    double rho32v6S;
-    double rho32v6l;
-    double rho32v8;
-    double rho32v8l;
-
-    double delta31vh3;
-    double delta31vh6;
-    double delta31vh6S;
-    double delta31vh7;
-    double delta31vh7S;
-    double delta31vh9;
-    double delta31v5;
-
-    double rho31v2;
-    double rho31v3;
-    double rho31v4;
-    double rho31v4S;
-    double rho31v5;
-    double rho31v5S;
-    double rho31v6;
-    double rho31v6S;
-    double rho31v6l;
-    double rho31v7;
-    double rho31v7S;
-    double rho31v8;
-    double rho31v8l;
-
-    double f31v3;
-    double f31v3S;
-
-    double delta44vh3;
-    double delta44vh6;
-    double delta44vh6S;
-    double delta44v5;
-    double delta44vh9;
-
-    double rho44v2;
-    double rho44v3;
-    double rho44v3S;
-    double rho44v4;
-    double rho44v4S;
-    double rho44v5;
-    double rho44v5S;
-    double rho44v6;
-    double rho44v6S;
-    double rho44v6l;
-    double rho44v8;
-    double rho44v8l;
-    double rho44v10;
-    double rho44v10l;
-
-    double delta43vh3;
-    double delta43vh4;
-    double delta43vh4S;
-    double delta43vh6;
-
-    double rho43v;
-    double rho43v2;
-    double rho43v4;
-    double rho43v4S;
-    double rho43v5;
-    double rho43v5S;
-    double rho43v6;
-    double rho43v6l;
-
-    double f43v;
-    double f43vS;
-
-    double delta42vh3;
-    double delta42vh6;
-    double delta42vh6S;
-
-    double rho42v2;
-    double rho42v3;
-    double rho42v3S;
-    double rho42v4;
-    double rho42v4S;
-    double rho42v5;
-    double rho42v5S;
-    double rho42v6;
-    double rho42v6S;
-    double rho42v6l;
-
-    double delta41vh3;
-    double delta41vh4;
-    double delta41vh4S;
-    double delta41vh6;
-
-    double rho41v;
-    double rho41v2;
-    double rho41v4;
-    double rho41v4S;
-    double rho41v5;
-    double rho41v5S;
-    double rho41v6;
-    double rho41v6l;
-
-    double f41v;
-    double f41vS;
-
-    double delta55vh3;
-    double delta55vh6;
-    double delta55vh9;
-
-    double delta55v5;
-    double rho55v2;
-    double rho55v3;
-    double rho55v3S;
-    double rho55v4;
-    double rho55v4S;
-    double rho55v5;
-    double rho55v5S;
-    double rho55v6;
-    double rho55v6l;
-    double rho55v8;
-    double rho55v8l;
-    double rho55v10;
-    double rho55v10l;
-    double f55v3;
-    double f55v4;
-    double f55v5c;
-
-    double delta54vh3;
-    double delta54vh4;
-    double delta54vh4S;
-    double rho54v2;
-    double rho54v3;
-    double rho54v3S;
-    double rho54v4;
-    double rho54v4S;
-
-    double delta53vh3;
-    double rho53v2;
-    double rho53v3;
-    double rho53v3S;
-    double rho53v4;
-    double rho53v4S;
-    double rho53v5;
-    double rho53v5S;
-
-    double delta52vh3;
-    double delta52vh4;
-    double delta52vh4S;
-    double rho52v2;
-    double rho52v3;
-    double rho52v3S;
-    double rho52v4;
-    double rho52v4S;
-
-    double delta51vh3;
-    double rho51v2;
-    double rho51v3;
-    double rho51v3S;
-    double rho51v4;
-    double rho51v4S;
-    double rho51v5;
-    double rho51v5S;
-
-    double delta66vh3;
-    double rho66v2;
-    double rho66v3;
-    double rho66v3S;
-    double rho66v4;
-    double rho66v4S;
-
-    double delta65vh3;
-    double rho65v2;
-    double rho65v3;
-    double rho65v3S;
-
-    double delta64vh3;
-    double rho64v2;
-    double rho64v3;
-    double rho64v3S;
-    double rho64v4;
-    double rho64v4S;
-
-    double delta63vh3;
-    double rho63v2;
-    double rho63v3;
-    double rho63v3S;
-
-    double delta62vh3;
-    double rho62v2;
-    double rho62v3;
-    double rho62v3S;
-    double rho62v4;
-    double rho62v4S;
-
-    double delta61vh3;
-    double rho61v2;
-    double rho61v3;
-    double rho61v3S;
-
-    double delta77vh3;
-    double rho77v2;
-    double rho77v3;
-    double rho77v3S;
-
-    double rho76v2;
-
-    double delta75vh3;
-    double rho75v2;
-    double rho75v3;
-    double rho75v3S;
-
-    double rho74v2;
-
-    double delta73vh3;
-    double rho73v2;
-    double rho73v3;
-    double rho73v3S;
-
-    double rho72v2;
-
-    double delta71vh3;
-    double rho71v2;
-    double rho71v3;
-    double rho71v3S;
-
-    double rho88v2;
-    double rho87v2;
-    double rho86v2;
-    double rho85v2;
-    double rho84v2;
-    double rho83v2;
-    double rho82v2;
-    double rho81v2;
-} FacWaveformCoeffs;
-
-
 #include "math_constants.h"
 
 // define lgam, using CUDA's lgamma as done for cupyx.scipy.special.gammaln
@@ -2854,9 +2506,50 @@ void EOBCalcSpinFacWaveformCoefficients(
 }
 
 
+CUDA_KERNEL
+void EOBCalcSpinFacWaveformCoefficients_kernel(FacWaveformCoeffs *coeffs_all, int use_hm, double* m1_all, double* m2_all, double* eta_all, double* a_all, double* chiS_all, double* chiA_all, int numSys)
+{
+    int start, increment;
+    #ifdef __CUDACC__
+    start = threadIdx.x + blockDim.x * blockIdx.x;
+    increment = gridDim.x * blockDim.x;
+#else
+    start = 0;
+    increment = 1;
+// pragma omp parallel for
+#endif
+    for (int bin_i = start; bin_i < numSys; bin_i += increment)
+    {
+        double m1 = m1_all[bin_i];
+        double m2 = m2_all[bin_i];
+        double eta = eta_all[bin_i];
+        double a = a_all[bin_i];
+        double chiS = chiS_all[bin_i];
+        double chiA = chiA_all[bin_i];
+
+        FacWaveformCoeffs *coeffs = &coeffs_all[bin_i];
+
+        EOBCalcSpinFacWaveformCoefficients(coeffs, use_hm, m1, m2, eta, a, chiS, chiA);
+    }
+}
+
+void EOBCalcSpinFacWaveformCoefficients_wrap(FacWaveformCoeffs *coeffs, int use_hm, double* m1, double* m2, double* eta, double* a, double* chiS, double* chiA, int numSys)
+{
+    #ifdef __CUDACC__
+    int num_blocks = (int)std::ceil((numSys + BLOCK - 1) / BLOCK);
+    EOBCalcSpinFacWaveformCoefficients_kernel<<<num_blocks, BLOCK>>>(coeffs, use_hm, m1, m2, eta, a, chiS, chiA, numSys);
+    cudaDeviceSynchronize();
+    gpuErrchk(cudaGetLastError());
+#else
+    EOBCalcSpinFacWaveformCoefficients_kernel(coeffs, use_hm, m1, m2, eta, a, chiS, chiA, numSys);
+#endif
+    
+}
+
+
 CUDA_CALLABLE_MEMBER
 double EOBSpinFactorizedFlux(double *values, double m_1, double m_2, double chiS, double chiA, double tplspin, double omega,
-                             double *newtonian_prefixes, int prefixes_start_ind, double eta, double H, int lMax, double vPhiInput, double h22_calib, int numSys, int i)
+                             double *newtonian_prefixes, int prefixes_start_ind, double eta, double H, int lMax, double vPhiInput, double h22_calib, int numSys, int i, FacWaveformCoeffs hCoeffs)
 {
     // TODO: need nqcCoeffs
 
@@ -2879,8 +2572,7 @@ double EOBSpinFactorizedFlux(double *values, double m_1, double m_2, double chiS
     double vPhi2 = vPhi * vPhi;
     // hCoeffs = ak['hCoeffs']
 
-    FacWaveformCoeffs hCoeffs;
-    EOBCalcSpinFacWaveformCoefficients(&hCoeffs, 1, m_1, m_2, eta, tplspin, chiS, chiA);
+    // TODO: take hCoeffs out of here?
     cmplx newtonian_prefix;
     int ind_lm = 0;
     int ind_real, ind_imag;
@@ -2908,7 +2600,7 @@ double EOBSpinFactorizedFlux(double *values, double m_1, double m_2, double chiS
 
 
 CUDA_CALLABLE_MEMBER
-void RR_force(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys, int i)
+void RR_force(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys, int i, FacWaveformCoeffs hCoeffs)
 {
     int ind1 = 0 * numSys + i;
     int ind2 = 1 * numSys + i;
@@ -2970,7 +2662,7 @@ void RR_force(double *force_out, double *grad_out, double *args, double *additio
     double chiA = 0.5 * (chi_1 - chi_2);
     double tplspin = (1.0 - 2.0 * nu) * chiS + (m_1 - m_2) / (m_1 + m_2) * chiA;
 
-    double flux = EOBSpinFactorizedFlux(args, m_1, m_2, chiS, chiA, tplspin, omega, prefixes, prefixes_start_ind, nu, H_val, 8, vPhi, h22_calib, numSys, i);
+    double flux = EOBSpinFactorizedFlux(args, m_1, m_2, chiS, chiA, tplspin, omega, prefixes, prefixes_start_ind, nu, H_val, 8, vPhi, h22_calib, numSys, i, hCoeffs);
     
     flux /= nu;
     double f_over_om = flux / omega;
@@ -2985,7 +2677,7 @@ void RR_force(double *force_out, double *grad_out, double *args, double *additio
 }
 
 CUDA_KERNEL
-void RR_force_kernel(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys)
+void RR_force_kernel(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys, FacWaveformCoeffs *hCoeffs)
 {
     int start, increment;
     #ifdef __CUDACC__
@@ -2998,26 +2690,14 @@ void RR_force_kernel(double *force_out, double *grad_out, double *args, double *
 #endif
     for (int bin_i = start; bin_i < numSys; bin_i += increment)
     {
-        RR_force(force_out, grad_out, args, additionalArgs, numSys, bin_i);
+        FacWaveformCoeffs hCoeffs_here = hCoeffs[bin_i];
+        RR_force(force_out, grad_out, args, additionalArgs, numSys, bin_i, hCoeffs_here);
     }
-}
-
-void RR_force_wrap(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys)
-{
-    #ifdef __CUDACC__
-    int num_blocks = (int)std::ceil((numSys + BLOCK - 1) / BLOCK);
-    RR_force_kernel<<<num_blocks, BLOCK>>>(force_out, grad_out, args, additionalArgs, numSys);
-    cudaDeviceSynchronize();
-    gpuErrchk(cudaGetLastError());
-#else
-    RR_force_kernel(force_out, grad_out, args, additionalArgs, numSys);
-#endif
-    
 }
 
 
 CUDA_CALLABLE_MEMBER
-double IC_diss(double pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys, int i)
+double IC_diss(double pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys, int i, FacWaveformCoeffs hCoeffs)
 {
     args[2 * numSys + i] = pr;
 
@@ -3029,7 +2709,7 @@ double IC_diss(double pr, double *args, double *additionalArgs, double *grad_out
     int omega_ind = 4 * numSys + i;
     additionalArgs[omega_ind] = grad_out[3 * numSys + i];
 
-    RR_force(force_out, grad_temp_force, args, additionalArgs, numSys, i);
+    RR_force(force_out, grad_temp_force, args, additionalArgs, numSys, i, hCoeffs);
 
     double d2Hdr2 = hess_out[0 * numSys + i];
     double d2HdrdL = hess_out[12 * numSys + i]; // [3,0]
@@ -3043,7 +2723,7 @@ double IC_diss(double pr, double *args, double *additionalArgs, double *grad_out
 
 
 CUDA_KERNEL
-void IC_diss_kernel(double* out, double *pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys)
+void IC_diss_kernel(double* out, double *pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys, FacWaveformCoeffs * hCoeffs)
 {
     int start, increment;
     #ifdef __CUDACC__
@@ -3056,25 +2736,14 @@ void IC_diss_kernel(double* out, double *pr, double *args, double *additionalArg
 #endif
     for (int bin_i = start; bin_i < numSys; bin_i += increment)
     {
-        out[bin_i] = IC_diss(pr[bin_i], args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, bin_i);
+        FacWaveformCoeffs hCoeffs_here = hCoeffs[bin_i];
+        out[bin_i] = IC_diss(pr[bin_i], args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, bin_i, hCoeffs_here);
     }
 }
 
-void IC_diss_wrap(double* out, double *pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys)
-{
-    #ifdef __CUDACC__
-    int num_blocks = (int)std::ceil((numSys + BLOCK - 1) / BLOCK);
-    IC_diss_kernel<<<num_blocks, BLOCK>>>(out, pr, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys);
-    cudaDeviceSynchronize();
-    gpuErrchk(cudaGetLastError());
-#else
-    IC_diss_kernel(out, pr, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys);
-#endif
-    
-}
 
 CUDA_CALLABLE_MEMBER
-void false_position_step(double *res, double *bounds, double *fbounds, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys, int i)
+void false_position_step(double *res, double *bounds, double *fbounds, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys, int i, FacWaveformCoeffs hCoeffs)
 {
     // FILL ARGS BEFORE
 
@@ -3086,7 +2755,7 @@ void false_position_step(double *res, double *bounds, double *fbounds, double *a
 
     double c = (a * f_b - b * f_a) / (f_b - f_a);
 
-    double f_c = IC_diss(c, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, i);
+    double f_c = IC_diss(c, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, i, hCoeffs);
     if (((f_b < 0.0) && (f_c < 0.0)) || ((f_b >= 0.0) && (f_c >= 0.0)))
     {
         b = c;
@@ -3109,7 +2778,7 @@ void false_position_step(double *res, double *bounds, double *fbounds, double *a
 }
 
 CUDA_CALLABLE_MEMBER
-double root_find_scalar(double *res, double *bounds, double *fbounds, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int max_iter, double err, int numSys, int i)
+double root_find_scalar(double *res, double *bounds, double *fbounds, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int max_iter, double err, int numSys, int i, FacWaveformCoeffs hCoeffs)
 {
 
     int it = 0;
@@ -3118,14 +2787,14 @@ double root_find_scalar(double *res, double *bounds, double *fbounds, double *ar
     double a = bounds[0 * numSys + i];
     double b = bounds[1 * numSys + i];
 
-    fbounds[0 * numSys + i] = IC_diss(a, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, i);
-    fbounds[1 * numSys + i] = IC_diss(b, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, i);
+    fbounds[0 * numSys + i] = IC_diss(a, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, i, hCoeffs);
+    fbounds[1 * numSys + i] = IC_diss(b, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, i, hCoeffs);
 
     double c = 0.0;
     int check = 0;
     while (it < max_iter)
     {
-        false_position_step(res, bounds, fbounds, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, i);
+        false_position_step(res, bounds, fbounds, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, i, hCoeffs);
         c = res[0 * numSys + i];
         f_c = res[1 * numSys + i];
         it += 1;
@@ -3140,7 +2809,7 @@ double root_find_scalar(double *res, double *bounds, double *fbounds, double *ar
 }
 
 CUDA_KERNEL
-void root_find_scalar_all(double *pr_res, double *start_bounds, double *argsIn, double *additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args)
+void root_find_scalar_all(double *pr_res, double *start_bounds, double *argsIn, double *additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args, FacWaveformCoeffs * hCoeffs)
 {
 
 #ifdef __CUDACC__
@@ -3191,22 +2860,14 @@ void root_find_scalar_all(double *pr_res, double *start_bounds, double *argsIn, 
         for (int jj = 0; jj < num_add_args; jj += 1)
             additionalArgs[jj * BLOCK + i] = additionalArgsIn[jj * numBinAll + bin_i];
 
-        double c_res_bin_i = root_find_scalar(res, bounds, fbounds, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, max_iter, err, BLOCK, i);
+        FacWaveformCoeffs hCoeffs_here = hCoeffs[bin_i];
+        double c_res_bin_i = root_find_scalar(res, bounds, fbounds, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, max_iter, err, BLOCK, i, hCoeffs_here);
 
         pr_res[bin_i] = c_res_bin_i;
     }
 }
 
-void root_find_scalar_all_wrap(double *pr_res, double *start_bounds, double *argsIn, double *additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args)
-{
-#ifdef __CUDACC__
-    root_find_scalar_all<<<numBinAll, BLOCK>>>(pr_res, start_bounds, argsIn, additionalArgsIn, max_iter, err, numBinAll, num_args, num_add_args);
-    cudaDeviceSynchronize();
-    gpuErrchk(cudaGetLastError());
-#else
-    root_find_scalar_all(pr_res, start_bounds, argsIn, additionalArgsIn, max_iter, err, numBinAll, num_args, num_add_args);
-#endif
-}
+
 
 // vector root finding
 
@@ -3386,7 +3047,7 @@ void root_find_all_wrap(double *xOut, double *x0In, double *argsIn, double *addi
 
 
 CUDA_KERNEL
-void ODE_Ham_align_AD(double *x, double *argsIn, double *k, double *additionalArgsIn, int numSys)
+void ODE_Ham_align_AD(double *x, double *argsIn, double *k, double *additionalArgsIn, int numSys, FacWaveformCoeffs *hCoeffs)
 { // C_grad_HTMalign_AC(double values[], int num_points, double ders[]){
     int start, increment;
 
@@ -3453,7 +3114,8 @@ void ODE_Ham_align_AD(double *x, double *argsIn, double *k, double *additionalAr
         // adjust omega
         additionalArgs[omega_ind] = dHdpphi;
 
-        RR_force(force_out, grad_temp_force, args, additionalArgs, BLOCK, i);
+        FacWaveformCoeffs hCoeffs_here = hCoeffs[bin_i];
+        RR_force(force_out, grad_temp_force, args, additionalArgs, BLOCK, i, hCoeffs_here);
 
         // TODO: implement tortoise
         // return array([dHdr, dHdphi, dHdpr, dHdpphi])
@@ -3478,15 +3140,93 @@ void ODE_Ham_align_AD(double *x, double *argsIn, double *k, double *additionalAr
     }
 }
 
-void ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys)
+SEOBNRv5::SEOBNRv5()
+{
+    allocated = false;
+    return;
+}
+
+SEOBNRv5::~SEOBNRv5()
+{
+    
+    return;
+}
+
+void SEOBNRv5::update_information(double *m1_, double *m2_, double *eta_, double *tplspin_, double *chi_S_, double *chi_A_, int use_hm, int numSys_)
+{
+    if (allocated)
+    {
+        // TODO: update with error catchable
+        printf("need to run deallocator each step. Exiting.\n");
+        return;       
+    }
+// TODO: Add prefixes
+    numSys = numSys_;
+
+    gpuErrchk(cudaMalloc(&hCoeffs, numSys * sizeof(FacWaveformCoeffs)));
+
+    EOBCalcSpinFacWaveformCoefficients_wrap(hCoeffs, use_hm, m1_, m2_, eta_, tplspin_, chi_S_, chi_A_, numSys);
+
+    allocated = true;
+
+}
+
+void SEOBNRv5::deallocate_information()
+{
+    if (allocated)
+    {
+        gpuErrchk(cudaFree(hCoeffs));
+    }
+    allocated = false;
+}
+
+void SEOBNRv5::RR_force_wrap(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys)
+{
+    #ifdef __CUDACC__
+    int num_blocks = (int)std::ceil((numSys + BLOCK - 1) / BLOCK);
+    RR_force_kernel<<<num_blocks, BLOCK>>>(force_out, grad_out, args, additionalArgs, numSys, hCoeffs);
+    cudaDeviceSynchronize();
+    gpuErrchk(cudaGetLastError());
+#else
+    RR_force_kernel(force_out, grad_out, args, additionalArgs, numSys, hCoeffs);
+#endif
+ 
+}
+
+void SEOBNRv5::root_find_scalar_all_wrap(double *pr_res, double *start_bounds, double *argsIn, double *additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args)
+{
+
+#ifdef __CUDACC__
+    root_find_scalar_all<<<numBinAll, BLOCK>>>(pr_res, start_bounds, argsIn, additionalArgsIn, max_iter, err, numBinAll, num_args, num_add_args, hCoeffs);
+    cudaDeviceSynchronize();
+    gpuErrchk(cudaGetLastError());
+#else
+    root_find_scalar_all(pr_res, start_bounds, argsIn, additionalArgsIn, max_iter, err, numBinAll, num_args, num_add_args, hCoeffs);
+#endif
+}
+
+void SEOBNRv5::IC_diss_wrap(double* out, double *pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys)
+{
+    #ifdef __CUDACC__
+    int num_blocks = (int)std::ceil((numSys + BLOCK - 1) / BLOCK);
+    IC_diss_kernel<<<num_blocks, BLOCK>>>(out, pr, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, hCoeffs);
+    cudaDeviceSynchronize();
+    gpuErrchk(cudaGetLastError());
+#else
+    IC_diss_kernel(out, pr, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, hCoeffs);
+#endif
+    
+}
+
+void SEOBNRv5::ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys)
 {
 #ifdef __CUDACC__
     int num_blocks = (int)std::ceil((numSys + BLOCK - 1) / BLOCK);
-    ODE_Ham_align_AD<<<num_blocks, BLOCK>>>(x, arg, k, additionalArgs, numSys);
+    ODE_Ham_align_AD<<<num_blocks, BLOCK>>>(x, arg, k, additionalArgs, numSys, hCoeffs);
 
     cudaDeviceSynchronize();
     gpuErrchk(cudaGetLastError());
 #else
-    ODE_Ham_align_AD(x, arg, k, additionalArgs, numSys);
+    ODE_Ham_align_AD(x, arg, k, additionalArgs, numSys, hCoeffs);
 #endif
 }

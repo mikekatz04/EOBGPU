@@ -619,7 +619,8 @@ class DOPR853:
                 ak_term_buffer,
                 nargs, 
                 numEq,
-                num_add_args
+                num_add_args,
+                self.ode
             )
 
             self.error2(

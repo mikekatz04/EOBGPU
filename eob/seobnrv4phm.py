@@ -23,9 +23,10 @@ try:
     import cupy as xp
     from .pyEOB import compute_hlms as compute_hlms_gpu
     from .pyEOB import root_find_all as root_find_all_gpu
-    from .pyEOB import root_find_scalar_all as root_find_scalar_all_gpu
+    #from .pyEOB import root_find_scalar_all as root_find_scalar_all_gpu
     # from .pyEOB import ODE as ODE_gpu
-    from .pyEOB import ODE_Ham_align_AD as ODE_Ham_align_AD_gpu
+    #from .pyEOB import ODE_Ham_align_AD as ODE_Ham_align_AD_gpu
+    from .pyEOB import SEOBNRv5Class as SEOBNRv5Class_gpu
     from .pytdinterp import TDInterp_wrap2 as TDInterp_wrap_gpu
     from .pytdinterp import interpolate_TD_wrap as interpolate_TD_wrap_gpu
     from .pytdinterp import all_in_one_likelihood as all_in_one_likelihood_gpu
@@ -567,7 +568,7 @@ class BBHWaveformTD:
         breakpoint()"""
         return like
 
-
+"""
 class ODEWrapper:
     def __init__(self, use_gpu=False):
         if use_gpu:
@@ -590,7 +591,7 @@ class ODEWrapper:
         self.ode(x_in, args_in, k_in, additionalArgs_in, numSys)
         breakpoint()
         k[:] = k_in.reshape(reshape)
-
+"""
 from scipy.special import gamma as scipy_gamma
 from cupyx.scipy.special import gamma as cupy_gamma
 
@@ -703,13 +704,14 @@ class SEOBNRv4PHM:
             self.xp = xp
             self.compute_hlms = compute_hlms_gpu
             self.root_find = root_find_all_gpu
-            self.root_find_scalar = root_find_scalar_all_gpu
+            #self.root_find_scalar = root_find_scalar_all_gpu
+            self.eob_c_class = SEOBNRv5Class_gpu()
 
         else:
             self.xp = np
             self.compute_hlms = compute_hlms_cpu
             self.root_find = root_find_all_cpu
-            self.root_find_scalar = root_find_scalar_all_cpu
+            #self.root_find_scalar = root_find_scalar_all_cpu
 
         if max_init_len > 0:
             self.use_buffers = True
@@ -764,13 +766,12 @@ class SEOBNRv4PHM:
         self.nparams = 2
 
         #self.HTM_AC = HTMalign_AC()
-        self.integrator = DOPR853(ODEWrapper(use_gpu=True), stopping_criterion=StoppingCriterion(
+        self.integrator = DOPR853(self.eob_c_class, stopping_criterion=StoppingCriterion(
             True, read_out_to_cpu=False), tmax=1e7*1e6, max_step=300, use_gpu=True, read_out_to_cpu=False)  # self.use_gpu)  # use_gpu=use_gpu)
 
         self.num_args = 4
         self.num_add_args = 10
-        self.num_add_args_total = self.num_add_args + 2 * self.num_lm 
-        
+        self.num_add_args_total = self.num_add_args + 2 * self.num_lm     
         
     def _sanity_check_modes(self, ells, mms):
         for (ell, mm) in zip(ells, mms):
@@ -907,7 +908,7 @@ class SEOBNRv4PHM:
         breakpoint()
         """
         additionalArgsIn = self.additionalArgs.copy().flatten()
-        self.root_find_scalar(
+        self.eob_c_class.root_find_scalar_all(
             pr0,
             start_bounds,
             argsIn,
@@ -918,6 +919,7 @@ class SEOBNRv4PHM:
             self.num_args,
             self.num_add_args_total,
         )
+
         return r0, pphi0, pr0
 
     def run_trajectory(self, r0, pphi0, pr0, m_1, m_2, chi_1, chi_2, fs=20.0, **kwargs):
@@ -1031,6 +1033,26 @@ class SEOBNRv4PHM:
 
         self.num_bin_all = len(m1)
 
+        # TODO: constants from LAL
+        # TODO: remove this happening multiple times?
+        M = self.xp.asarray(m1 + m2)  # Total mass in solar masses
+    
+        m_1_scaled = self.xp.asarray(m1) / M
+        m_2_scaled = self.xp.asarray(m2) / M
+        chi1z = self.xp.asarray(chi1z)
+        chi2z = self.xp.asarray(chi2z)
+        eta = m_1_scaled * m_2_scaled / (m_1_scaled + m_2_scaled) ** 2
+        chi_S = (chi1z + chi2z) / 2
+        chi_A = (chi1z - chi2z) / 2
+        tplspin = (1 - 2 * eta) * chi_S + (m_1_scaled - m_2_scaled) / (
+            m_1_scaled + m_2_scaled
+        ) * chi_A
+
+        use_hm = 1
+        breakpoint()
+        self.eob_c_class.update_information(m_1_scaled, m_2_scaled, eta, tplspin, chi_S, chi_A, use_hm, self.num_bin_all)
+        
+
         r0, pphi0, pr0 = self.get_initial_conditions(
             m1, m2, chi1z, chi2z, fs=fs)
 
@@ -1043,6 +1065,7 @@ class SEOBNRv4PHM:
         hlms = self.get_hlms(traj, m1, m2, chi1z, chi2z,
                              num_steps, ells, mms) / distance[:, None, None]
 
+        self.eob_c_class.deallocate_information()
         phi = traj[:, 1]
 
         self.lengths = num_steps.astype(self.xp.int32)
