@@ -53,17 +53,89 @@ sys.path.append(
 
 
 class StoppingCriterion:
-    def __init__(self, use_gpu=False, read_out_to_cpu=False):
+    def __init__(self, eob_c_class, max_step, use_gpu=False, read_out_to_cpu=False):
         self.use_gpu = use_gpu
         self.read_out_to_cpu = read_out_to_cpu
+        self.eob_c_class = eob_c_class
+        self.max_step = max_step
 
-    def __call__(self, step_num, denseOutput):
-        if self.use_gpu and self.read_out_to_cpu:
+        self.old_omegas = None
+
+        if use_gpu:
+            self.xp = xp
+        else:
+            self.xp = np
+
+    def setup(self, numSys):
+        self.numSys = numSys
+        self.old_omegas = self.xp.zeros((self.max_step, numSys))
+
+    def reset(self):
+        self.old_omegas = None
+
+    def __call__(self, step_num, denseOutput, additionalArgs, index_update):
+
+        if self.read_out_to_cpu:
+            raise NotImplementedError
+            
+        nargs, numSys_here = denseOutput.shape
+        
+        args = denseOutput.flatten()
+        additionalArgsIn = additionalArgs.flatten()
+        derivs = self.xp.zeros((nargs, numSys_here)).flatten()
+        x = self.xp.zeros(1)
+        self.eob_c_class.ODE_Ham_align_AD(x, args, derivs, additionalArgsIn, numSys_here)
+
+        derivs = derivs.reshape(nargs, numSys_here)
+
+        r = denseOutput[0]
+        stop = self.xp.zeros_like(r, dtype=int)
+
+        drdt = derivs[0]
+        omega = derivs[1]
+        dprdt = derivs[2]
+
+        if self.old_omegas is None:
+            raise ValueError("Must use `setup` attribute before using this method.")
+
+        # if np.isnan(np.min(y)) or np.isnan(np.min(derivs)):
+        #     return 1
+
+        inds_remaining = np.ones_like(r, dtype=bool)
+
+        stop[inds_remaining] += 2 * (r[inds_remaining] < 1.0)
+        inds_remaining = ~(stop.astype(bool))
+
+        stop[inds_remaining] += 3 * ((r[inds_remaining] < 6.0) & (drdt[inds_remaining] > 0.0))
+        inds_remaining = ~(stop.astype(bool))
+
+        stop[inds_remaining] += 4 * ((r[inds_remaining] < 6.0) & (dprdt[inds_remaining] > 0.0))
+        inds_remaining = ~(stop.astype(bool))
+
+        inds_here = inds_remaining * (step_num > 5)
+        if self.xp.any(inds_here):
+            num_still_here = self.xp.sum(inds_here).item()
+
+            get_inds = (step_num[inds_here, None] + self.xp.tile(self.xp.arange(-4, 0), (num_still_here, 1))).flatten()
+
+            still_have = self.xp.arange(len(inds_here))[inds_here]
+            
+            first_check = r[inds_here] < 6.0
+            second_check = omega[inds_here] < self.old_omegas[(step_num - 1, still_have)]
+
+            close_old_omegas = self.old_omegas[(get_inds, self.xp.repeat(still_have, 4))].reshape(num_still_here, 4)
+            third_check = self.xp.all(self.xp.diff(close_old_omegas, axis=1) < 0.0, axis=1)
+            
+            stop[inds_here] += 5 * (first_check) * (second_check) * (third_check)
+
+        self.old_omegas[(step_num, index_update)] = omega
+   
+        """if self.use_gpu and :
             stop = denseOutput[(step_num.get(), np.zeros_like(
-                step_num.get()), np.arange(len(step_num)))] < 6.0
+                step_num.get()), np.arange(len(step_num)))] < 3.0
         else:
             stop = denseOutput[(step_num, np.zeros_like(
-                step_num), np.arange(len(step_num)))] < 3.0
+                step_num), np.arange(len(step_num)))] < 3.0"""
         return stop
 
 
@@ -764,10 +836,9 @@ class SEOBNRv4PHM:
         )
 
         self.nparams = 2
-
+        max_step = 300
         #self.HTM_AC = HTMalign_AC()
-        self.integrator = DOPR853(self.eob_c_class, stopping_criterion=StoppingCriterion(
-            True, read_out_to_cpu=False), tmax=1e7*1e6, max_step=300, use_gpu=True, read_out_to_cpu=False)  # self.use_gpu)  # use_gpu=use_gpu)
+        self.integrator = DOPR853(self.eob_c_class, stopping_criterion=StoppingCriterion(self.eob_c_class, max_step, use_gpu=True, read_out_to_cpu=False), tmax=1e7*1e6, max_step=max_step, use_gpu=True, read_out_to_cpu=False)  # self.use_gpu)  # use_gpu=use_gpu)
 
         self.num_args = 4
         self.num_add_args = 10
@@ -940,7 +1011,6 @@ class SEOBNRv4PHM:
         argsData = additionalArgsIn = self.additionalArgs.copy()
         # TODO: make adjustable
         # TODO: debug dopr?
-        breakpoint()
         t, traj, num_steps = self.integrator.integrate(
             condBound.copy(), argsData
         )
@@ -1049,7 +1119,6 @@ class SEOBNRv4PHM:
         ) * chi_A
 
         use_hm = 1
-        breakpoint()
         self.eob_c_class.update_information(m_1_scaled, m_2_scaled, eta, tplspin, chi_S, chi_A, use_hm, self.num_bin_all)
         
 

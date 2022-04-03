@@ -484,9 +484,12 @@ class DOPR853:
         # Check if the previous step was rejected
         CUDA_SHARED bool previousReject[BLOCK]
         """
-        
+
         solOld = self.xp.asarray(condBound)  # boundary conditions
         nODE, numSys = solOld.shape
+
+        if self.stopping_criterion is not None and hasattr(self.stopping_criterion, "setup"):
+            self.stopping_criterion.setup(numSys)
 
         additionalArgs = self.xp.asarray(argsData)
 
@@ -559,9 +562,12 @@ class DOPR853:
         
         ii = 0
         jj = 0
-       
+
+        stop = self.xp.ones_like(x, dtype=bool)
+        self.stop_info = self.xp.zeros_like(x, dtype=int)
         while (loopFlag):
 
+            num_current = np.sum(individual_loop_flag)
             xTemp = x[individual_loop_flag]
             hTemp = h[individual_loop_flag]
             #xOldTemp = self.xp.zeros_like(xTemp)
@@ -703,11 +709,14 @@ class DOPR853:
                 denseOutput[(read_out_step, read_out_ode_dim, read_out_index_update)] = solOld[:, index_update].flatten()
                 denseOutputLoc[(step_num[index_update], index_update)] = x[index_update]
 
-            if self.stopping_criterion is not None:
-                stop = self.xp.asarray(self.stopping_criterion(step_num, denseOutput))
+            if self.stopping_criterion is not None and len(index_update) > 0:
+                stop_temp = self.xp.asarray(self.stopping_criterion(step_num, solOld[:, index_update], additionalArgs[:, index_update], index_update))
             else:
-                stop = self.xp.ones_like(x, dtype=bool)
+                stop_temp = self.xp.zeros(len(index_update), dtype=bool)
             
+            # for checking how it stopped
+            self.stop_info[index_update] = stop_temp.copy()
+            stop[index_update] = stop_temp.astype(bool)
             individual_loop_flag[(x >= self.tmax) | (step_num >= self.max_step - 1) | stop] = False  #  | (solNew[0] < 6.0)] = False
             self.xp.cuda.runtime.deviceSynchronize()
             if self.xp.all(~individual_loop_flag):
@@ -723,6 +732,8 @@ class DOPR853:
                 #print(ii)
             # 0.008480359460227191 (0.0.00077)
 
+        if self.stopping_criterion is not None and hasattr(self.stopping_criterion, "reset"):
+            self.stopping_criterion.reset()
         return (denseOutputLoc, denseOutput, step_num) # denseDerivOutput
 
 
