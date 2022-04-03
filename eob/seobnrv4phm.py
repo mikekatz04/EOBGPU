@@ -836,7 +836,7 @@ class SEOBNRv4PHM:
         )
 
         self.nparams = 2
-        max_step = 300
+        max_step = 400
         #self.HTM_AC = HTMalign_AC()
         self.integrator = DOPR853(self.eob_c_class, stopping_criterion=StoppingCriterion(self.eob_c_class, max_step, use_gpu=True, read_out_to_cpu=False), tmax=1e7*1e6, max_step=max_step, use_gpu=True, read_out_to_cpu=False)  # self.use_gpu)  # use_gpu=use_gpu)
 
@@ -993,11 +993,12 @@ class SEOBNRv4PHM:
 
         return r0, pphi0, pr0
 
-    def run_trajectory(self, r0, pphi0, pr0, m_1, m_2, chi_1, chi_2, fs=20.0, **kwargs):
+    def run_trajectory(self, r0, pphi0, pr0, m_1, m_2, chi_1, chi_2, fs=20.0, step_back=10.0, fine_step=0.05, **kwargs):
 
         # TODO: constants from LAL
-        mt = m_1 + m_2  # Total mass in solar masses
-        omega0 = fs * (mt * MTSUN_SI * np.pi)
+        mt = self.xp.asarray(m_1 + m_2)  # Total mass in solar masses
+        m_1 = self.xp.asarray(m_1)
+        m_2 = self.xp.asarray(m_2)
         m_1_scaled = m_1 / mt
         m_2_scaled = m_2 / mt
         dt = 1.0 / 16384 / (mt * MTSUN_SI)
@@ -1015,6 +1016,33 @@ class SEOBNRv4PHM:
             condBound.copy(), argsData
         )
 
+        # steps are axis 0
+        last_ind = self.xp.where(self.xp.diff(t[1:].astype(bool).astype(int), axis=0) == -1)
+
+        t_stop = t[last_ind]
+
+        # The starting point of fine integration
+        t_desired = t_stop - step_back
+
+        idx_restart = self.xp.argmin(self.xp.abs(t - t_desired[None, :]), axis=0)
+
+        prep_inds = self.xp.tile(self.xp.arange(t.shape[0]), (self.num_bin_all, 1)).T
+
+        # walk back
+        t[(prep_inds >= idx_restart[None, :])] = 0.0
+        traj[self.xp.tile((prep_inds[:, None, :] >= idx_restart[None, None, :]), (1, 4, 1))] = 0.0
+
+        step_num = idx_restart - 1
+
+        t, traj, num_steps = self.integrator.integrate(
+            condBound.copy(), argsData,
+            step_num=step_num,
+            denseOutput=traj,
+            denseOutputLoc=t,
+            hInit=fine_step,
+            fix_step=True,
+        )
+        # TODO: check integrator difference if needed
         num_steps = num_steps.astype(np.int32)
 
         num_steps_max = num_steps.max().item()

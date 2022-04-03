@@ -430,6 +430,10 @@ class DOPR853:
         condBound, # Initial condition stored as a vector
         argsData,
         hInit=None, # Initial spacing
+        step_num=None,
+        denseOutput=None,
+        denseOutputLoc=None,
+        fix_step=False,
     ):
         """
         # Declare all shared memory
@@ -485,22 +489,54 @@ class DOPR853:
         CUDA_SHARED bool previousReject[BLOCK]
         """
 
-        solOld = self.xp.asarray(condBound)  # boundary conditions
-        nODE, numSys = solOld.shape
+        if denseOutput is not None or denseOutput is not None or denseOutput is not None:
+            if denseOutput is None:
+                raise ValueError("If providing denseOutputLoc/denseOutput/step_num, must provide all.")
+        
+        if denseOutput is None:
+            solOld = self.xp.asarray(condBound)  # boundary conditions
+            nODE, numSys = solOld.shape
+            denseOutput = self.xp_read_out.zeros((self.max_step, nODE, numSys))
+            denseOutputLoc = self.xp_read_out.zeros((self.max_step, numSys))
+            step_num = self.xp.zeros(numSys, dtype=int)
+            x = self.xp.zeros(numSys)
+            if self.use_gpu and self.read_out_to_cpu:
+                denseOutput[0, :, :] = solOld.get()
+                denseOutputLoc[0, :] = x.get()
+            else:
+                denseOutput[0, :, :] = solOld
+                denseOutputLoc[0, :] = x
+                
+        else:
+            assert denseOutput.ndim == 3
+            max_steps, nODE, numSys = denseOutput.shape
+            #adjust max_steps
+            self.max_steps = max_steps
+            assert denseOutputLoc.shape == (self.max_step, numSys)
+            assert step_num.shape[0] == numSys
+            x = denseOutputLoc[(step_num, self.xp.arange(numSys))]
 
+            solOld = denseOutput[
+                (
+                    self.xp.repeat(step_num, nODE),
+                    self.xp.tile(self.xp.arange(4), (numSys, 1)).flatten(),
+                    self.xp.repeat(self.xp.arange(numSys), nODE)
+                )
+            ].reshape(numSys, nODE).T
+                
         if self.stopping_criterion is not None and hasattr(self.stopping_criterion, "setup"):
             self.stopping_criterion.setup(numSys)
 
         additionalArgs = self.xp.asarray(argsData)
-
-        x = self.xp.zeros(numSys)
+            
         if hInit is None:
             hInit = 0.01
 
+        hInit_orig = hInit
         h = self.xp.full_like(x, hInit)
 
-        xOld = self.xp.zeros_like(x)
-        hOld = self.xp.zeros_like(h)
+        #xOld = self.xp.zeros_like(x)
+        #hOld = self.xp.zeros_like(h)
 
         # Set pointers to these that can be swapped
         solNew = self.xp.zeros_like(solOld)
@@ -544,22 +580,8 @@ class DOPR853:
         #denseOutputLoc[step_num] = x[i]
         # Use a while loop as it is easier to keep stepping regardless of
 
-        denseOutput = self.xp_read_out.zeros((self.max_step, nODE, numSys))
-        #denseDerivOutput = self.xp_read_out.zeros((self.max_step, nODE, numSys))
-        denseOutputLoc = self.xp_read_out.zeros((self.max_step, numSys))
-
-        if self.use_gpu and self.read_out_to_cpu:
-            denseOutput[0, :, :] = solOld.get()
-            denseOutputLoc[0, :] = x.get()
-        else:
-            denseOutput[0, :, :] = solOld
-            denseOutputLoc[0, :] = x
-
-        step_num = self.xp.zeros(numSys, dtype=int)
         individual_loop_flag = self.xp.ones_like(step_num, dtype=bool)
 
-    
-        
         ii = 0
         jj = 0
 
@@ -660,6 +682,12 @@ class DOPR853:
                 nargs
             )
 
+            if fix_step and self.xp.any(~flagSuccess):
+                raise ValueError("With fix_step=True, a step was denied. Must change fixed step size with hInit.")
+
+            if fix_step:
+                hTemp[:] = hInit_orig
+
             """
             self.dormandPrinceSteps(xTemp, solOldTemp, hTemp, additionalArgsTemp, *ks)
 
@@ -714,6 +742,7 @@ class DOPR853:
             else:
                 stop_temp = self.xp.zeros(len(index_update), dtype=bool)
             
+            # TODO: add max step size 0.05
             # for checking how it stopped
             self.stop_info[index_update] = stop_temp.copy()
             stop[index_update] = stop_temp.astype(bool)
