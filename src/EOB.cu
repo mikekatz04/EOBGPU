@@ -11,174 +11,6 @@
 
 #define BLOCK 32
 
-CUDA_KERNEL
-void compute_hlms(cmplx *hlms, double *r_arr, double *phi_arr, double *pr_arr, double *L_arr,
-                  double *m1_arr, double *m2_arr, double *chi1_arr, double *chi2_arr,
-                  int *num_steps, int num_steps_max, int *ell_arr_in, int *mm_arr_in, int num_modes, int num_bin_all)
-{
-
-    CUDA_SHARED int ell_arr[MAX_MODES];
-    CUDA_SHARED int mm_arr[MAX_MODES];
-
-    cmplx I(0.0, 1.0);
-
-    int start, increment;
-
-#ifdef __CUDACC__
-    start = threadIdx.y;
-    increment = blockDim.y;
-#else
-    start = 0;
-    increment = 1;
-// pragma omp parallel for
-#endif
-    for (int i = start; i < num_modes; i += increment)
-    {
-        ell_arr[i] = ell_arr_in[i];
-        mm_arr[i] = mm_arr_in[i];
-    }
-    CUDA_SYNC_THREADS;
-
-#ifdef __CUDACC__
-    start = blockIdx.x;
-    increment = gridDim.x;
-#else
-    start = 0;
-    increment = 1;
-// pragma omp parallel for
-#endif
-    for (int bin_i = start; bin_i < num_bin_all; bin_i += increment)
-    {
-        int num_steps_here = num_steps[bin_i];
-
-        double m_1 = m1_arr[bin_i];
-        double m_2 = m2_arr[bin_i];
-        double chi_1 = chi1_arr[bin_i];
-        double chi_2 = chi2_arr[bin_i];
-
-        double M = m_1 + m_2;
-        double mu = m_1 * m_2 / (m_1 + m_2);
-        double nu = mu / M;
-        double X1 = m_1 / M;
-        double X2 = m_2 / M;
-        double Chi1 = chi_1;
-        double Chi2 = chi_2;
-        double Nu = nu;
-        double Delta = (m_1 - m_2) / M;
-
-        int start2, increment2;
-#ifdef __CUDACC__
-        start2 = threadIdx.x;
-        increment2 = blockDim.x;
-#else
-        start2 = 0;
-        increment2 = 1;
-// pragma omp parallel for
-#endif
-        for (int i = start2; i < num_steps_here; i += increment2)
-        {
-            double r = r_arr[bin_i * num_steps_max + i];
-            double phi = r_arr[bin_i * num_steps_max + i];
-            double pr = r_arr[bin_i * num_steps_max + i];
-            double L = r_arr[bin_i * num_steps_max + i];
-
-            cmplx HCirc_temp(0.0, 0.0);
-            for (int mode_i = 0; mode_i < num_modes; mode_i += 1)
-            {
-                int ell = ell_arr[mode_i];
-                int mm = mm_arr[mode_i];
-
-                if ((ell == 2) && (mm == 0))
-                    HCirc_temp = cmplx(0.0, 0.0);
-
-                else if ((ell == 2) && (mm == 1))
-                    HCirc_temp = -0.25 * I * Chi1 * (Delta + 1.) / pow(r, 2) + 0.0119047619047619 * I * Chi1 * (Delta * (26. * Nu - 21.) + 247. * Nu - 21) / pow(r, 3) - 0.25 * I * Chi2 * (Delta - 1) / pow(r, 2) + 0.0119047619047619 * I * Chi2 * (Delta * (26 * Nu - 21) - 247 * Nu + 21) / pow(r, 3) + 0.333333333333333 * I * Delta / pow(r, 3. / 2.) + 0.202380952380952 * I * Delta * (2 * Nu - 1) / pow(r, 5. / 2.) - 0.666666666666667 * sqrt(2.) * I * PI / pow(r, 3);
-
-                else if ((ell == 2) && (mm == 2))
-                    HCirc_temp = 0.25 * pow(Chi1, 2) * (3.0 * Delta - 6.0 * Nu + 3.0) / pow(r, 3) + 3.0 * Chi1 * Chi2 * Nu / pow(r, 3) + 0.166666666666667 * Chi1 * (-6 * Delta + 5 * Nu - 6) / pow(r, 5. / 2.) - 0.25 * pow(Chi2, 2) * (3.0 * Delta + 6.0 * Nu - 3.0) / pow(r, 3) + 0.166666666666667 * Chi2 * (6 * Delta + 5 * Nu - 6) / pow(r, 5. / 2.) + 1. / r + (69.0 * Nu - 107.0) / (42 * pow(r, 2)) + 0.000661375661375661 * (3703 * pow(Nu, 2) - 11941 * Nu - 2173) / pow(r, 3) + 2.0 * PI / pow(r, 5. / 2.);
-
-                else if ((ell == 3) && (mm == 0))
-                    HCirc_temp = cmplx(0.0, 0.0);
-
-                else if ((ell == 3) && (mm == 1))
-                    HCirc_temp = 0.00148809523809524 * sqrt(14.) * I * Chi1 * (2 * Delta * (7 * Nu - 3) + 19 * Nu - 6) / pow(r, 3) + 0.00148809523809524 * sqrt(14.) * I * Chi2 * (2 * Delta * (7 * Nu - 3) - 19 * Nu + 6) / pow(r, 3) + 0.00595238095238095 * sqrt(14.) * I * Delta / pow(r, 3. / 2.) - 0.000992063492063492 * sqrt(14.) * I * Delta * (Nu + 16) / pow(r, 5. / 2.) - 0.00595238095238095 * sqrt(14.) * I * PI / pow(r, 3); // 3,1]
-
-                else if ((ell == 3) && (mm == 2))
-                    HCirc_temp = 0.0952380952380952 * sqrt(35.) * Chi1 * Nu / pow(r, 5. / 2.) + 0.0952380952380952 * sqrt(35.) * Chi2 * Nu / pow(r, 5. / 2.) + 0.0476190476190476 * sqrt(35.) * (1 - 3 * Nu) / pow(r, 2) - sqrt(35.) * (545.0 * pow(Nu, 2) - 785.0 * Nu + 193.0) / (1890 * pow(r, 3)); // [3,2]
-
-                else if ((ell == 3) && (mm == 3))
-                    HCirc_temp = -0.0401785714285714 * sqrt(210.) * I * Chi1 * (2 * Delta * (Nu - 1) + 9 * Nu - 2) / pow(r, 3) - 0.0401785714285714 * sqrt(210.) * I * Chi2 * (2 * Delta * (Nu - 1) - 9 * Nu + 2) / pow(r, 3) - 0.0535714285714286 * sqrt(210.) * I * Delta / pow(r, 3. / 2.) - 0.0267857142857143 * sqrt(210.) * I * Delta * (5 * Nu - 8) / pow(r, 5. / 2.) + 0.160714285714286 * sqrt(210.) * I * PI / pow(r, 3);
-
-                else if ((ell == 4) && (mm == 0))
-                    HCirc_temp = cmplx(0.0, 0.0);
-
-                else if ((ell == 4) && (mm == 1))
-                    HCirc_temp = 0.00148809523809524 * sqrt(10.) * I * Chi1 * Nu * (Delta - 1) / pow(r, 3) + 0.00148809523809524 * sqrt(10.) * I * Chi2 * Nu * (Delta + 1) / pow(r, 3) - 0.00119047619047619 * sqrt(10.) * I * Delta * (2 * Nu - 1) / pow(r, 5. / 2.);
-
-                else if ((ell == 4) && (mm == 2))
-                    HCirc_temp = 0.0158730158730159 * sqrt(5.) * (1 - 3 * Nu) / pow(r, 2) - sqrt(5.) * (315.0 * pow(Nu, 2) - 1415.0 * Nu + 437.0) / (6930 * pow(r, 3));
-
-                else if ((ell == 4) && (mm == 3))
-                    HCirc_temp = -0.0401785714285714 * sqrt(70.) * I * Chi1 * Nu * (Delta - 1) / pow(r, 3) - 0.0401785714285714 * sqrt(70.) * I * Chi2 * Nu * (Delta + 1) / pow(r, 3) + 0.0321428571428571 * sqrt(70.) * I * Delta * (2 * Nu - 1) / pow(r, 5. / 2.);
-
-                else if ((ell == 4) && (mm == 4))
-                    HCirc_temp = 0.126984126984127 * sqrt(35.) * (3 * Nu - 1) / pow(r, 2) + sqrt(35.) * (4380.0 * pow(Nu, 2) - 8780.0 * Nu + 2372.0) / (3465 * pow(r, 3));
-
-                else if ((ell == 5) && (mm == 0))
-                    HCirc_temp = cmplx(0.0, 0.0);
-
-                else if ((ell == 5) && (mm == 1))
-                    HCirc_temp = -9.01875901875902e-6 * sqrt(385.) * I * Delta * (2 * Nu - 1) / pow(r, 5. / 2.);
-
-                else if ((ell == 5) && (mm == 2))
-                    HCirc_temp = sqrt(55.) * (10.0 * pow(Nu, 2) - 10.0 * Nu + 2.0) / (1485. * pow(r, 3));
-
-                else if ((ell == 5) && (mm == 3))
-                    HCirc_temp = 0.00255681818181818 * sqrt(330.) * I * Delta * (2 * Nu - 1) / pow(r, 5. / 2.);
-
-                else if ((ell == 5) && (mm == 4))
-                    HCirc_temp = sqrt(165.) * (-160.0 * pow(Nu, 2) + 160.0 * Nu - 32.0) / (1485 * pow(r, 3));
-
-                else if ((ell == 5) && (mm == 5))
-                    HCirc_temp = -0.0986426767676768 * sqrt(66.) * I * Delta * (2 * Nu - 1) / pow(r, 5. / 2.);
-
-                else if ((ell == 6) && (mm == 0))
-                    HCirc_temp = cmplx(0.0, 0.0);
-
-                else if ((ell == 6) && (mm == 2))
-                    HCirc_temp = sqrt(65.) * (10.0 * pow(Nu, 2) - 10.0 * Nu + 2.0) / (19305. * pow(r, 3));
-
-                else if ((ell == 6) && (mm == 4))
-                    HCirc_temp = -0.00663040663040663 * sqrt(78.) * (5 * pow(Nu, 2) - 5 * Nu + 1) / pow(r, 3);
-
-                else if ((ell == 6) && (mm == 6))
-                    HCirc_temp = sqrt(143.) * (270.0 * pow(Nu, 2) - 270.0 * Nu + 54.0) / (715. * pow(r, 3));
-
-                HCirc_temp = HCirc_temp * gcmplx::exp(-I * cmplx(mm * phi, 0.0)) * sqrt(PI / 5.) * 8. * mu;
-
-                hlms[(bin_i * num_modes + mode_i) * num_steps_max + i] = HCirc_temp;
-            }
-        }
-    }
-}
-
-void compute_hlms_wrap(cmplx *hlms, double *r_arr, double *phi_arr, double *pr_arr, double *L_arr,
-                       double *m1_arr, double *m2_arr, double *chi1_arr, double *chi2_arr,
-                       int *num_steps, int num_steps_max, int *ell_arr_in, int *mm_arr_in, int num_modes, int num_bin_all)
-{
-#ifdef __CUDACC__
-    compute_hlms<<<num_bin_all, NUM_THREADS_EOB>>>(hlms, r_arr, phi_arr, pr_arr, L_arr,
-                                                   m1_arr, m2_arr, chi1_arr, chi2_arr,
-                                                   num_steps, num_steps_max, ell_arr_in, mm_arr_in, num_modes, num_bin_all);
-    cudaDeviceSynchronize();
-    gpuErrchk(cudaGetLastError());
-#else
-    compute_hlms(hlms, r_arr, phi_arr, pr_arr, L_arr,
-                 m1_arr, m2_arr, chi1_arr, chi2_arr,
-                 num_steps, num_steps_max, ell_arr_in, mm_arr_in, num_modes, num_bin_all);
-#endif
-}
-
 #define euler_gamma 0.57721566490153286060651209008240243104215933593992
 
 CUDA_CALLABLE_MEMBER
@@ -275,15 +107,34 @@ double evaluate_Ham_align_AD(double r, double phi, double pr, double pphi, doubl
 }
 
 CUDA_KERNEL
-void evaluate_Ham_align_AD_kernel(double *out, double r, double phi, double pr, double pphi, double m_1, double m_2, double chi_1, double chi_2, double K, double d5, double dSO, double dSS)
+void evaluate_Ham_align_AD_kernel(double *out, double *r, double *phi, double *pr, double *pphi, double *m_1, double *m_2, double *chi_1, double *chi_2, double K, double d5, double dSO, double dSS, int numSys)
 {
-    out[0] = evaluate_Ham_align_AD(r, phi, pr, pphi, m_1, m_2, chi_1, chi_2, K, d5, dSO, dSS);
+    int start, increment;
+    #ifdef __CUDACC__
+    start = threadIdx.x + blockDim.x * blockIdx.x;
+    increment = gridDim.x * blockDim.x;
+    #else
+        start = 0;
+        increment = 1;
+    // pragma omp parallel for
+    #endif
+        for (int bin_i = start; bin_i < numSys; bin_i += increment)
+        {
+            out[bin_i] = evaluate_Ham_align_AD(r[bin_i], phi[bin_i], pr[bin_i], pphi[bin_i], m_1[bin_i], m_2[bin_i], chi_1[bin_i], chi_2[bin_i], K, d5, dSO, dSS);
+        }
 }
 
-void evaluate_Ham_align_AD_wrap(double *out, double r, double phi, double pr, double pphi, double m_1, double m_2, double chi_1, double chi_2, double K, double d5, double dSO, double dSS)
+void evaluate_Ham_align_AD_wrap(double *out, double *r, double *phi, double *pr, double *pphi, double *m_1, double *m_2, double *chi_1, double *chi_2,double K, double d5, double dSO, double dSS, int numSys)
 {
-    evaluate_Ham_align_AD_kernel<<<1, 1>>>(out, r, phi, pr, pphi, m_1, m_2, chi_1, chi_2, K, d5, dSO, dSS);
-}
+    #ifdef __CUDACC__
+    int num_blocks = (int)std::ceil((numSys + NUM_THREADS_EOB - 1) / NUM_THREADS_EOB);
+    evaluate_Ham_align_AD_kernel<<<num_blocks, NUM_THREADS_EOB>>>(out, r, phi, pr, pphi, m_1, m_2, chi_1, chi_2, K, d5, dSO, dSS, numSys);
+cudaDeviceSynchronize();
+    gpuErrchk(cudaGetLastError());
+#else
+    evaluate_Ham_align_AD_kernel(out, r, phi, pr, pphi, m_1, m_2, chi_1, chi_2, K, d5, dSO, dSS, numSys);
+#endif
+    }
 
 CUDA_CALLABLE_MEMBER
 void grad_Ham_align_AD_single(double *arg, double *k, double *additionalArgs, int numSys, int i)
@@ -1149,8 +1000,19 @@ CUDA_CALLABLE_MEMBER cmplx sph_harm(int m, int n, double theta, double phi)
 CUDA_CALLABLE_MEMBER
 cmplx EOBFluxCalculateNewtonianMultipole(double x, double phi, int l, int m, cmplx param)
 {
-    cmplx out(1.0, 0.0);
-    return out;
+
+    int epsilon = (l + m) % 2;
+
+
+    cmplx y = 0.0;
+    // Calculate the necessary Ylm
+    cmplx ylm = sph_harm(-m, l - epsilon, phi, PI / 2);
+
+    cmplx multipole = param * pow(x, ((l + epsilon) / 2.0));
+    multipole *= ylm;
+    if (phi == 0.0)
+        printf("%d %d %.12e %.12e %.12e %.12e %.12e %d\n", l, m, ylm.real(), ylm.imag(), param.real(), param.imag(), x, epsilon);
+    return multipole;
 }
 
 
@@ -1378,8 +1240,11 @@ cmplx EOBGetSpinFactorizedWaveform(
 )
 {
     double Slm, deltalm, rholm;
-    cmplx auxflm, Tlm, rholmPwrl, hNewton;
+    cmplx Tlm, hNewton;
     cmplx I(0.0, 1.0);
+
+    cmplx rholmPwrl(0.0, 0.0);
+    cmplx auxflm(0.0, 0.0);
 
     double pp = pphi;
 
@@ -1431,6 +1296,9 @@ cmplx EOBGetSpinFactorizedWaveform(
             deltalm = vh3 * (hCoeffs.delta22vh3 + vh3 * (hCoeffs.delta22vh6 + vh * vh * (hCoeffs.delta22vh9 * vh))) + hCoeffs.delta22v5 * v * v2 * v2 + hCoeffs.delta22v6 * v2 * v2 * v2 + hCoeffs.delta22v8 * v2 * v2 * v2 * v2;
 
             rholm = 1. + v2 * (hCoeffs.rho22v2 + v * (hCoeffs.rho22v3 + v * (hCoeffs.rho22v4 + v * (hCoeffs.rho22v5 + v * (hCoeffs.rho22v6 + hCoeffs.rho22v6l * eulerlogxabs + v * (hCoeffs.rho22v7 + v * (hCoeffs.rho22v8 + hCoeffs.rho22v8l * eulerlogxabs + (hCoeffs.rho22v10 + hCoeffs.rho22v10l * eulerlogxabs) * v2))))))) + h22_calib * pow(v, 12);
+
+            //if ((blockIdx.x == 0) && (threadIdx.x == 0))
+            //printf("INIT3: %.12e %.12e %.12e %.12e %.12e %.12e \n", rholm, deltalm, vh3, v, v2, hCoeffs.delta22vh3);
         }
 
         else if (abs(m) == 1)
@@ -1440,6 +1308,7 @@ cmplx EOBGetSpinFactorizedWaveform(
 
             // RC : This terms are in Eq.A11 in https : #journals.aps.org / prd / abstract / 10.1103 / PhysRevD .98.084028
             auxflm = v * (hCoeffs.f21v1 + v2 * (hCoeffs.f21v3 + v * hCoeffs.f21v4 + v2 * (hCoeffs.f21v5 + v * hCoeffs.f21v6 + v2 * hCoeffs.f21v7c)));
+
         }
     }
     else if (l == 3)
@@ -1714,16 +1583,84 @@ cmplx EOBGetSpinFactorizedWaveform(
     // rholmPwrl = 1.0
     // for i in range(l):
     // rholmPwrl *= rholm
-    rholmPwrl = pow(rholm, l);
+
+    rholmPwrl = cmplx(pow(rholm, l), 0.0);
 
     if ((eta == 0.25) && (m % 2))
         rholmPwrl = auxflm;
     else
         rholmPwrl += auxflm;
-
+    
     cmplx hlm = Tlm * gcmplx::exp(I * deltalm) * Slm * rholmPwrl;
     hlm *= hNewton;
+    
+    //if ((blockIdx.x == 0) && (threadIdx.x == 0) && (phi == 0.0))
+    //{
+      //  printf("CHECK CHECK : %d %d %.14e %.14e %.14e %.14e %.14e %.14e %.14e %.14e %.14e %.14e \n", l, m, hlm.real(), hlm.imag(), deltalm, Slm, rholmPwrl.real(), rholmPwrl.imag(), Tlm.real(), Tlm.imag(), hNewton.real(), hNewton.imag());
+    //}
     return hlm;
+}
+
+CUDA_KERNEL
+void EOBGetSpinFactorizedWaveform_kernel(
+    cmplx *out,
+    double *r,
+    double *phi,
+    double *pr,
+    double *pphi,
+    double *v,
+    double *Hreal,
+    double *eta,
+    double *vPhiInput,
+    int l,
+    int m,
+    FacWaveformCoeffs *hCoeffs,
+    cmplx *newtonian_prefixes,
+    double h22_calib,
+    int numSys,
+    int traj_length
+)
+{
+    int start, increment, start2, increment2;
+    #ifdef __CUDACC__
+    start = blockIdx.x;
+    increment = gridDim.x;
+    #else
+        start = 0;
+        increment = 1;
+    // pragma omp parallel for
+    #endif
+    for (int bin_i = start; bin_i < numSys; bin_i += increment)
+    {
+        FacWaveformCoeffs hCoeffs_here = hCoeffs[bin_i];
+
+        #ifdef __CUDACC__
+        start2 = threadIdx.x;
+        increment2 = blockDim.x;
+        #else
+        start2 = 0;
+        increment2 = 1;
+        // pragma omp parallel for
+        #endif
+        for (int i = start2; i < traj_length; i += increment2)
+        {
+            cmplx tmp = EOBGetSpinFactorizedWaveform(
+                                    r[bin_i * traj_length + i],
+                                    phi[bin_i * traj_length + i],
+                                    pr[bin_i * traj_length + i],
+                                    pphi[bin_i * traj_length + i],
+                                    v[bin_i * traj_length + i],
+                                    Hreal[bin_i * traj_length + i],
+                                    l,
+                                    m,
+                                    hCoeffs_here,
+                                    newtonian_prefixes[bin_i],
+                                    eta[bin_i],
+                                    vPhiInput[bin_i * traj_length + i],
+                                    h22_calib);
+            out[bin_i * traj_length + i] = tmp;
+        }
+    }
 }
 
 CUDA_CALLABLE_MEMBER
@@ -3140,6 +3077,203 @@ void ODE_Ham_align_AD(double *x, double *argsIn, double *k, double *additionalAr
     }
 }
 
+
+CUDA_KERNEL
+void compute_hlms(cmplx *hlms, double *r_arr, double *phi_arr, double *pr_arr, double *L_arr,
+                  double *m1_arr, double *m2_arr, double *chi1_arr, double *chi2_arr,
+                  int *num_steps, int num_steps_max, int *ell_arr_in, int *mm_arr_in, int num_modes, int num_bin_all, double* additionalArgsIn, int num_add_args, FacWaveformCoeffs *hCoeffs, cmplx *newtonian_prefixes_all)
+{
+
+    CUDA_SHARED int ell_arr[MAX_MODES];
+    CUDA_SHARED int mm_arr[MAX_MODES];
+    CUDA_SHARED cmplx newtonian_prefixes[MAX_MODES];
+
+    CUDA_SHARED double args[NARGSMAX * BLOCK];
+    CUDA_SHARED double grad[NARGSMAX * BLOCK];
+    CUDA_SHARED double grad_circ[NARGSMAX * BLOCK];
+    CUDA_SHARED double additionalArgs[NADDARGSMAX * BLOCK];
+    
+    cmplx I(0.0, 1.0);
+
+    int start, increment;
+
+#ifdef __CUDACC__
+    start = threadIdx.x;
+    increment = blockDim.x;
+#else
+    start = 0;
+    increment = 1;
+// pragma omp parallel for
+#endif
+    for (int i = start; i < num_modes; i += increment)
+    {
+        ell_arr[i] = ell_arr_in[i];
+        mm_arr[i] = mm_arr_in[i];
+    }
+    CUDA_SYNC_THREADS;
+
+
+#ifdef __CUDACC__
+    start = blockIdx.x;
+    increment = gridDim.x;
+#else
+    start = 0;
+    increment = 1;
+// pragma omp parallel for
+#endif
+    for (int bin_i = start; bin_i < num_bin_all; bin_i += increment)
+    {
+        int start2, increment2;
+        FacWaveformCoeffs hCoeffs_here = hCoeffs[bin_i];
+        double temp_add_arg;
+        #ifdef __CUDACC__
+        start2 = threadIdx.x;
+        increment2 = blockDim.x;
+        #else
+        start2 = 0;
+        increment2 = 1;
+        #endif
+        for (int i = start2; i < num_add_args; i += increment2)
+        {
+            // replicate args for each thread since they are the same for each binary which is the whole block
+            temp_add_arg = additionalArgsIn[i * num_bin_all + bin_i];
+            for ( int jj = 0; jj < BLOCK; jj += 1)
+            {
+                additionalArgs[i * BLOCK + jj] = temp_add_arg;
+            }
+        }
+        CUDA_SYNC_THREADS;
+
+        for (int mode_i = start2; mode_i < num_add_args; mode_i += increment2)
+        {
+            newtonian_prefixes[mode_i] = newtonian_prefixes_all[mode_i * num_bin_all + bin_i];
+        }
+        CUDA_SYNC_THREADS;
+
+        int num_steps_here = num_steps[bin_i];
+
+        
+        double m_1 = m1_arr[bin_i];
+        double m_2 = m2_arr[bin_i];
+        double chi_1 = chi1_arr[bin_i];
+        double chi_2 = chi2_arr[bin_i];
+
+        double M = m_1 + m_2;
+        double mu = m_1 * m_2 / (m_1 + m_2);
+        double nu = mu / M;
+        double X1 = m_1 / M;
+        double X2 = m_2 / M;
+        double Chi1 = chi_1;
+        double Chi2 = chi_2;
+        double Nu = nu;
+        double Delta = (m_1 - m_2) / M;
+
+#ifdef __CUDACC__
+        start2 = threadIdx.x;
+        increment2 = blockDim.x;
+#else
+        start2 = 0;
+        increment2 = 1;
+// pragma omp parallel for
+#endif
+        for (int i = start2; i < num_steps_here; i += increment2)
+        {
+            double r = r_arr[bin_i * num_steps_max + i];
+            double phi = phi_arr[bin_i * num_steps_max + i];
+            double pr = pr_arr[bin_i * num_steps_max + i];
+            double L = L_arr[bin_i * num_steps_max + i];
+
+            double omega_circ,omega,vPhi,H_val,v,chiS,chiA,tplspin;
+
+            args[0 * BLOCK + i] = r;
+            args[1 * BLOCK + i] = phi;
+            args[2 * BLOCK + i] = 0.0; // circ first
+            args[3 * BLOCK + i] = L;
+
+            grad_Ham_align_AD_single(args, grad_circ, additionalArgs, BLOCK, i);
+        
+            args[2 * BLOCK + i] = pr; // full second
+            grad_Ham_align_AD_single(args, grad, additionalArgs, BLOCK, i);
+            if ((blockIdx.x == 0) && (threadIdx.x == 0))
+            {
+                printf("INIT4: %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n", args[0 * BLOCK + i], args[1 * BLOCK + i], args[2 * BLOCK + i], args[3 * BLOCK + i], grad[0 * BLOCK + i], grad[1 * BLOCK + i], grad[2 * BLOCK + i], grad[3 * BLOCK + i]);
+                for (int jjj = 0; jjj < 9; jjj += 1)
+                {
+                    printf("INIT5: %d %.12e\n", jjj, additionalArgs[jjj * BLOCK + i]);
+                }
+                            
+            }
+            omega_circ = grad_circ[3 * BLOCK + i];
+            omega = grad[3 * BLOCK + i];
+            vPhi = 1./(pow(omega_circ, 2) * pow(r, 3));
+    
+            int K_ind = 5 * BLOCK + i;
+            int d5_ind = 6 * BLOCK + i;
+            int dSO_ind = 7 * BLOCK + i;
+            int dSS_ind = 8 * BLOCK + i;
+            int h22_calib_ind = 9 * BLOCK + i;
+            int prefixes_start_ind = 10;
+
+            double K = additionalArgs[K_ind];
+            double d5 = additionalArgs[d5_ind];
+            double dSO = additionalArgs[dSO_ind];
+            double dSS = additionalArgs[dSS_ind];
+            double h22_calib = additionalArgs[h22_calib_ind];
+            
+            H_val =  nu * evaluate_Ham_align_AD(r, phi, pr, L, m_1, m_2, chi_1, chi_2, K, d5, dSO, dSS);
+            
+            v = pow(omega, (1./3.));
+            // Needed for hCoeffs
+            chiS = 0.5 * (chi_1 + chi_2);
+            chiA = 0.5 * (chi_1 - chi_2);
+            tplspin = (1.0 - 2.0 * nu) * chiS + (m_1 - m_2) / (m_1 + m_2) * chiA;
+
+            for (int mode_i = 0; mode_i < num_modes; mode_i += 1)
+            {
+                int ell = ell_arr[mode_i];
+                int mm = mm_arr[mode_i];
+                cmplx newtonian_prefix = newtonian_prefixes[mode_i];
+                cmplx tmp = EOBGetSpinFactorizedWaveform(
+                                    r,
+                                    phi,
+                                    pr,
+                                    L,
+                                    v,
+                                    H_val,
+                                    ell,
+                                    mm,
+                                    hCoeffs_here,
+                                    newtonian_prefix,
+                                    nu,
+                                    vPhi,
+                                    h22_calib);
+
+                //if ((bin_i == 0) && (i == 0)) 
+                //printf("CHECKING: %.12e %.12e %.12e %.12e %.12e %.12e %d %d, %.12e+%.12e I, %.12e %.12e %.12e\n", r, phi, pr, L, v, H_val, ell, mm, newtonian_prefix.real(), newtonian_prefix.imag(), nu, vPhi, h22_calib);
+                //hlms[(bin_i * num_modes + mode_i) * num_steps_max + i] = tmp;
+            }
+        }
+    }
+}
+
+void SEOBNRv5::compute_hlms_wrap(cmplx *hlms, double *r_arr, double *phi_arr, double *pr_arr, double *L_arr,
+                       double *m1_arr, double *m2_arr, double *chi1_arr, double *chi2_arr,
+                       int *num_steps, int num_steps_max, int *ell_arr_in, int *mm_arr_in, int num_modes, int num_bin_all, double* additionalArgsIn, int num_add_args)
+{
+#ifdef __CUDACC__
+    compute_hlms<<<num_bin_all, BLOCK>>>(hlms, r_arr, phi_arr, pr_arr, L_arr,
+                                                   m1_arr, m2_arr, chi1_arr, chi2_arr,
+                                                   num_steps, num_steps_max, ell_arr_in, mm_arr_in, num_modes, num_bin_all, additionalArgsIn, num_add_args, hCoeffs, newtonian_prefixes);
+    cudaDeviceSynchronize();
+    gpuErrchk(cudaGetLastError());
+#else
+    compute_hlms(hlms, r_arr, phi_arr, pr_arr, L_arr,
+                 m1_arr, m2_arr, chi1_arr, chi2_arr,
+                 num_steps, num_steps_max, ell_arr_in, mm_arr_in, num_modes, num_bin_all, additionalArgsIn, num_add_args, hCoeffs, newtonian_prefixes);
+#endif
+}
+
+
 SEOBNRv5::SEOBNRv5()
 {
     allocated = false;
@@ -3152,7 +3286,7 @@ SEOBNRv5::~SEOBNRv5()
     return;
 }
 
-void SEOBNRv5::update_information(double *m1_, double *m2_, double *eta_, double *tplspin_, double *chi_S_, double *chi_A_, int use_hm, int numSys_)
+void SEOBNRv5::update_information(double *m1_, double *m2_, double *eta_, double *tplspin_, double *chi_S_, double *chi_A_, int use_hm, int numSys_, cmplx *newtonian_prefixes_)
 {
     if (allocated)
     {
@@ -3162,6 +3296,8 @@ void SEOBNRv5::update_information(double *m1_, double *m2_, double *eta_, double
     }
 // TODO: Add prefixes
     numSys = numSys_;
+
+    newtonian_prefixes = newtonian_prefixes_;
 
     gpuErrchk(cudaMalloc(&hCoeffs, numSys * sizeof(FacWaveformCoeffs)));
 
@@ -3216,6 +3352,66 @@ void SEOBNRv5::IC_diss_wrap(double* out, double *pr, double *args, double *addit
     IC_diss_kernel(out, pr, args, additionalArgs, grad_out, grad_temp_force, hess_out, force_out, numSys, hCoeffs);
 #endif
     
+}
+
+void SEOBNRv5::EOBGetSpinFactorizedWaveform_wrap(
+    cmplx *out,
+    double *r,
+    double *phi,
+    double *pr,
+    double *pphi,
+    double *v,
+    double *Hreal,
+    double *eta,
+    double *vPhiInput,
+    int l,
+    int m,
+    cmplx *newtonian_prefix,
+    double h22_calib,
+    int numSys,
+    int traj_length
+)
+{
+    #ifdef __CUDACC__
+    EOBGetSpinFactorizedWaveform_kernel<<<numSys, NUM_THREADS_EOB>>>(
+        out,
+        r,
+        phi,
+        pr,
+        pphi,
+        v,
+        Hreal,
+        eta,
+        vPhiInput,
+        l,
+        m,
+        hCoeffs, // brought in from pointer
+        newtonian_prefix,
+        h22_calib,
+        numSys,
+        traj_length);
+
+    cudaDeviceSynchronize();
+    gpuErrchk(cudaGetLastError());
+    #else
+        EOBGetSpinFactorizedWaveform_kernel(
+            out,
+            r,
+            phi,
+            pr,
+            pphi,
+            v,
+            Hreal,
+            eta,
+            vPhiInput,
+            l,
+            m,
+            hCoeffs, // brought in from pointer
+            newtonian_prefix,
+            h22_calib,
+            numSys,
+            traj_length);
+    #endif
 }
 
 void SEOBNRv5::ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys)

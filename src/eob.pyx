@@ -7,16 +7,12 @@ assert sizeof(int) == sizeof(np.int32_t)
 
 cdef extern from "EOB.hh":
     ctypedef void* cmplx 'cmplx'
-    void compute_hlms_wrap(cmplx* hlms, double* r_arr, double* phi_arr, double* pr_arr, double* L_arr,
-                  double* m1_arr, double* m2_arr, double* chi1_arr, double* chi2_arr,
-                  int* num_steps, int num_steps_max, int* ell_arr_in, int* mm_arr_in, int num_modes, int num_bin_all);
 
     void root_find_all_wrap(double* xOut, double* x0In, double*argsIn, double* additionalArgsIn, int max_iter, double err, int numBinAll, int n, int num_args, int num_add_args);
 
     void grad_Ham_align_AD_wrap(double *arg, double *grad_out, double *additionalArgs, int numSys);
     void hessian_Ham_align_AD_wrap(double *arg, double *hessian_out, double *additionalArgs, int numSys);
-    void ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys);
-    void evaluate_Ham_align_AD_wrap(double *out, double r, double phi, double pr, double pphi, double m_1, double m_2, double chi_1, double chi_2, double K, double d5, double dSO, double dSS);
+    void evaluate_Ham_align_AD_wrap(double *out, double *r, double *phi, double *pr, double *pphi, double *m_1, double *m_2, double *chi_1, double *chi_2, double K, double d5, double dSO, double dSS, int numSys);
 
     void EOBComputeNewtonMultipolePrefixes_wrap(cmplx *prefixes, double *m1, double *m2, int ell_max, int numSys);
     void IC_cons_wrap(double *res, double *x, double *args, double *additionalArgs, double *grad_out, int numSys);
@@ -24,36 +20,31 @@ cdef extern from "EOB.hh":
     cppclass SEOBNRv5:
         SEOBNRv5();
         void deallocate_information();
-        void update_information(double *m1_, double *m2_, double *eta_, double *tplspin_, double *chi_S_, double *chi_A, int use_hm, int numSys_);
+        void update_information(double *m1_, double *m2_, double *eta_, double *tplspin_, double *chi_S_, double *chi_A, int use_hm, int numSys_, cmplx *newtonian_prefixes_hlms);
         void RR_force_wrap(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys);
         void root_find_scalar_all_wrap(double *pr_res, double *start_bounds, double *argsIn, double *additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args);
         void ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys);
         void IC_diss_wrap(double* out, double *pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys);
-
-
-
-@pointer_adjust
-def compute_hlms(hlms, r_arr, phi_arr, pr_arr, L_arr,
-              m1_arr, m2_arr, chi1_arr, chi2_arr,
-              num_steps, num_steps_max, ell_arr_in, mm_arr_in, num_modes, num_bin_all):
-
-    cdef size_t hlms_in = hlms
-    cdef size_t r_arr_in = r_arr
-    cdef size_t phi_arr_in = phi_arr
-    cdef size_t pr_arr_in = pr_arr
-    cdef size_t L_arr_in = L_arr
-    cdef size_t m1_arr_in = m1_arr
-    cdef size_t m2_arr_in = m2_arr
-    cdef size_t chi1_arr_in = chi1_arr
-    cdef size_t chi2_arr_in = chi2_arr
-    cdef size_t num_steps_in = num_steps
-    cdef size_t ell_arr_in_in = ell_arr_in
-    cdef size_t mm_arr_in_in = mm_arr_in
-
-    compute_hlms_wrap(<cmplx*> hlms_in, <double*> r_arr_in, <double*> phi_arr_in, <double*> pr_arr_in, <double*> L_arr_in,
-                  <double*> m1_arr_in, <double*> m2_arr_in, <double*> chi1_arr_in, <double*> chi2_arr_in,
-                  <int*> num_steps_in, num_steps_max, <int*> ell_arr_in_in, <int*> mm_arr_in_in, num_modes, num_bin_all)
-
+        void compute_hlms_wrap(cmplx *hlms, double *r_arr, double *phi_arr, double *pr_arr, double *L_arr,
+                       double *m1_arr, double *m2_arr, double *chi1_arr, double *chi2_arr,
+                       int *num_steps, int num_steps_max, int *ell_arr_in, int *mm_arr_in, int num_modes, int num_bin_all, double* additionalArgsIn, int num_add_args)
+        void EOBGetSpinFactorizedWaveform_wrap(
+            cmplx *out,
+            double *r,
+            double *phi,
+            double *pr,
+            double *pphi,
+            double *v,
+            double *Hreal,
+            double *eta,
+            double *vPhiInput,
+            int l,
+            int m,
+            cmplx *newtonian_prefix,
+            double h22_calib,
+            int numSys,
+            int traj_length 
+        );
 
 @pointer_adjust
 def root_find_all(xOut, x0In, argsIn, additionalArgsIn, max_iter, err, numBinAll, n, num_args, num_add_args):
@@ -84,9 +75,19 @@ def hessian_Ham_align_AD(arg, hessian_out, additionalArgs, numSys):
     hessian_Ham_align_AD_wrap(<double*> arg_in, <double*> hessian_out_in, <double*> additionalArgs_in, numSys)
 
 @pointer_adjust
-def evaluate_Ham_align_AD(out, r, phi, pr, pphi, m_1, m_2, chi_1, chi_2, K, d5, dSO, dSS):
+def evaluate_Ham_align_AD(out, r, phi, pr, pphi, m_1, m_2, chi_1, chi_2, K, d5, dSO, dSS, numSys):
+    
     cdef size_t out_in = out
-    evaluate_Ham_align_AD_wrap(<double *>out_in, r, phi, pr, pphi, m_1, m_2, chi_1, chi_2, K, d5, dSO, dSS)
+    cdef size_t r_in = r
+    cdef size_t phi_in = phi
+    cdef size_t pr_in = pr
+    cdef size_t pphi_in = pphi
+    cdef size_t m_1_in = m_1
+    cdef size_t m_2_in = m_2
+    cdef size_t chi_1_in = chi_1
+    cdef size_t chi_2_in = chi_2
+
+    evaluate_Ham_align_AD_wrap(<double *>out_in, <double *>r_in, <double *>phi_in, <double *>pr_in, <double *>pphi_in, <double *>m_1_in, <double *>m_2_in, <double *>chi_1_in, <double *>chi_2_in, K, d5, dSO, dSS, numSys)
 
 @pointer_adjust
 def IC_cons(res, x, args, additionalArgs, grad_out, numSys):
@@ -113,15 +114,16 @@ cdef class SEOBNRv5Class:
         del self.cobj
     
     @pointer_adjust
-    def update_information(self, m1, m2, eta, tplspin, chi_S, chi_A, use_hm, numSys):
+    def update_information(self, m1, m2, eta, tplspin, chi_S, chi_A, use_hm, numSys, newtonian_prefixes_hlms):
         cdef size_t m1_in = m1
         cdef size_t m2_in = m2
         cdef size_t eta_in = eta
         cdef size_t tplspin_in = tplspin
         cdef size_t chi_S_in = chi_S
         cdef size_t chi_A_in = chi_A
+        cdef size_t newtonian_prefixes_hlms_in = newtonian_prefixes_hlms
 
-        self.cobj.update_information(<double *>m1_in, <double *>m2_in, <double *>eta_in, <double *>tplspin_in, <double *>chi_S_in, <double *>chi_A_in, use_hm, numSys)
+        self.cobj.update_information(<double *>m1_in, <double *>m2_in, <double *>eta_in, <double *>tplspin_in, <double *>chi_S_in, <double *>chi_A_in, use_hm, numSys, <cmplx *>newtonian_prefixes_hlms_in)
 
     def deallocate_information(self):
         self.cobj.deallocate_information()
@@ -169,6 +171,79 @@ cdef class SEOBNRv5Class:
         cdef size_t additionalArgsIn_in = additionalArgsIn
 
         self.cobj.root_find_scalar_all_wrap(<double*> pr_res_in, <double*> start_bounds_in, <double*> argsIn_in, <double*> additionalArgsIn_in, max_iter, err, numBinAll, num_args, num_add_args)
+
+    @pointer_adjust
+    def compute_hlms(self, hlms, r_arr, phi_arr, pr_arr, L_arr,
+                    m1_arr, m2_arr, chi1_arr, chi2_arr,
+                    num_steps, num_steps_max, ell_arr_in, mm_arr_in, num_modes, num_bin_all, additionalArgsIn, num_add_args):
+
+        cdef size_t hlms_in = hlms
+        cdef size_t r_arr_in = r_arr
+        cdef size_t phi_arr_in = phi_arr
+        cdef size_t pr_arr_in = pr_arr
+        cdef size_t L_arr_in = L_arr
+        cdef size_t m1_arr_in = m1_arr
+        cdef size_t m2_arr_in = m2_arr
+        cdef size_t chi1_arr_in = chi1_arr
+        cdef size_t chi2_arr_in = chi2_arr
+        cdef size_t num_steps_in = num_steps
+        cdef size_t ell_arr_in_in = ell_arr_in
+        cdef size_t mm_arr_in_in = mm_arr_in
+        cdef size_t additionalArgsIn_in = additionalArgsIn
+
+        self.cobj.compute_hlms_wrap(<cmplx*> hlms_in, <double*> r_arr_in, <double*> phi_arr_in, <double*> pr_arr_in, <double*> L_arr_in,
+                        <double*> m1_arr_in, <double*> m2_arr_in, <double*> chi1_arr_in, <double*> chi2_arr_in,
+                        <int*> num_steps_in, num_steps_max, <int*> ell_arr_in_in, <int*> mm_arr_in_in, num_modes, num_bin_all,
+                        <double*>additionalArgsIn_in, num_add_args)
+
+    @pointer_adjust
+    def EOBGetSpinFactorizedWaveform(
+            self,
+            out,
+            r,
+            phi,
+            pr,
+            pphi,
+            v,
+            Hreal,
+            eta,
+            vPhiInput,
+            l,
+            m,
+            newtonian_prefix,
+            h22_calib,
+            numSys,
+            traj_length 
+        ):
+    
+        cdef size_t out_in = out
+        cdef size_t r_in = r
+        cdef size_t phi_in = phi
+        cdef size_t pr_in = pr
+        cdef size_t pphi_in = pphi
+        cdef size_t v_in = v
+        cdef size_t Hreal_in = Hreal
+        cdef size_t eta_in = eta
+        cdef size_t vPhiInput_in = vPhiInput
+        cdef size_t newtonian_prefix_in = newtonian_prefix
+
+        self.cobj.EOBGetSpinFactorizedWaveform_wrap(
+            <cmplx *>out_in,
+            <double *>r_in,
+            <double *>phi_in,
+            <double *>pr_in,
+            <double *>pphi_in,
+            <double *>v_in,
+            <double *>Hreal_in,
+            <double *>eta_in,
+            <double *>vPhiInput_in,
+            l,
+            m,
+            <cmplx *>newtonian_prefix_in,
+            h22_calib,
+            numSys,
+            traj_length 
+        )
 
     property conceiled_ptr:
         def __get__(self):

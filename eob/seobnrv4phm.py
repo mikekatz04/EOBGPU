@@ -4,8 +4,9 @@ from .pyEOB_cpu import ODE_Ham_align_AD as ODE_Ham_align_AD_cpu
 from .pyEOB_cpu import ODE as ODE_cpu
 from .pyEOB_cpu import root_find_scalar_all as root_find_scalar_all_cpu
 from .pyEOB_cpu import root_find_all as root_find_all_cpu
-from .pyEOB_cpu import compute_hlms as compute_hlms_cpu
+#from .pyEOB_cpu import compute_hlms as compute_hlms_cpu
 import numpy as np
+import warnings
 from bbhx.utils.constants import *
 
 MTSUN_SI = 4.925491025543576e-06
@@ -21,11 +22,12 @@ from .ode_for_test import ODE_1
 
 try:
     import cupy as xp
-    from .pyEOB import compute_hlms as compute_hlms_gpu
+    #from .pyEOB import compute_hlms as compute_hlms_gpu
     from .pyEOB import root_find_all as root_find_all_gpu
     #from .pyEOB import root_find_scalar_all as root_find_scalar_all_gpu
     # from .pyEOB import ODE as ODE_gpu
-    #from .pyEOB import ODE_Ham_align_AD as ODE_Ham_align_AD_gpu
+    from .pyEOB import evaluate_Ham_align_AD as evaluate_Ham_align_AD_gpu
+    from .pyEOB import grad_Ham_align_AD as grad_Ham_align_AD_gpu
     from .pyEOB import SEOBNRv5Class as SEOBNRv5Class_gpu
     from .pytdinterp import TDInterp_wrap2 as TDInterp_wrap_gpu
     from .pytdinterp import interpolate_TD_wrap as interpolate_TD_wrap_gpu
@@ -167,7 +169,7 @@ class CubicSplineInterpolantTD:
             self.xp = np
             self.interpolate_arrays = interpolate_TD_wrap_cpu
 
-        ninterps = nsubs * num_bin_all
+        ninterps = self.ninterps = nsubs * num_bin_all
         self.degree = 3
 
         self.lengths = lengths.astype(self.xp.int32)
@@ -212,6 +214,140 @@ class CubicSplineInterpolantTD:
     @property
     def container(self):
         return [self.x, self.y, self.c1, self.c2, self.c3]
+
+    def _get_inds(self, tnew):
+        # find were in the old t array the new t values split
+
+        inds = self.xp.zeros((self.num_bin_all, tnew.shape[1]), dtype=int)
+
+        # Optional TODO: remove loop ? if speed needed
+        for i, (t, tnew_i) in enumerate(zip(self.t_shaped, tnew)):
+            inds[i] = self.xp.searchsorted(t, tnew_i, side="right") - 1
+
+            # fix end value
+            inds[i][tnew_i == t[-1]] = len(t) - 2
+
+        # get values outside the edges
+        inds_bad_left = tnew < self.t_shaped[:, 0][:, None]
+        inds_bad_right = tnew > self.t_shaped[:, -1][:, None]
+
+        if self.xp.any(inds < 0) or self.xp.any(inds >= self.t_shaped.shape[1]):
+            warnings.warn(
+                "New t array outside bounds of input t array. These points are filled with edge values."
+            )
+        return inds, inds_bad_left, inds_bad_right
+
+    def __call__(self, tnew, deriv_order=0):
+        """Evaluation function for the spline
+
+        Put in an array of new t values at which all interpolants will be
+        evaluated. If t values are outside of the original t values, edge values
+        are used to fill the new array at these points.
+
+        args:
+            tnew (1D or 2D double xp.ndarray): Array of new t values. All of these new
+                t values must be within the bounds of the input t values,
+                including the beginning t and **excluding** the ending t. If tnew is 1D
+                and :code:`self.t` is 2D, tnew will be cast to 2D.
+            deriv_order (int, optional): Order of the derivative to evaluate. Default
+                is 0 meaning the basic spline is evaluated. deriv_order of 1, 2, and 3
+                correspond to their respective derivatives of the spline. Unlike :code:`scipy`,
+                this is purely an evaluation of the derivative values, not a new class to evaluate
+                for the derivative.
+
+        raises:
+            ValueError: a new t value is not in the bounds of the input t array.
+
+        returns:
+            xp.ndarray: 1D or 2D array of evaluated spline values (or derivatives).
+
+        """
+
+        tnew = self.xp.atleast_1d(tnew)
+
+        if tnew.ndim == 2:
+            if tnew.shape[0] != self.t_shaped.shape[0]:
+                raise ValueError(
+                    "If providing a 2D tnew array, must have some number of interpolants as was entered during initialization."
+                )
+
+        # copy input to all splines
+        elif tnew.ndim == 1:
+            tnew = self.xp.tile(tnew, (self.t.shape[0], 1))
+
+        tnew = self.xp.atleast_2d(tnew)
+
+        # get indices into spline
+        inds, inds_bad_left, inds_bad_right = self._get_inds(tnew)
+
+        # x value for spline
+
+        # indexes for which spline
+        inds0 = self.xp.tile(self.xp.arange(self.num_bin_all), (tnew.shape[1], 1)).T
+
+        t_here = self.t_shaped[(inds0.flatten(), inds.flatten())].reshape(
+            self.num_bin_all, tnew.shape[1]
+        )
+
+        x = tnew - t_here
+        x2 = x * x
+        x3 = x2 * x
+
+        inds0 = self.xp.repeat(inds0.flatten(), self.nsubs)
+        inds = self.xp.repeat(inds.flatten(), self.nsubs)
+
+        inds_subs = self.xp.tile(self.xp.arange(self.nsubs), (self.num_bin_all * tnew.shape[1], 1)).flatten()
+        # get spline coefficients
+        y = self.y_shaped[(inds0.flatten(), inds_subs, inds.flatten())].reshape(
+            self.num_bin_all, self.nsubs, tnew.shape[1]
+        )
+
+        c1 = self.c1_shaped[(inds0.flatten(), inds_subs, inds.flatten())].reshape(
+            self.num_bin_all, self.nsubs, tnew.shape[1]
+        )
+        c2 = self.c2_shaped[(inds0.flatten(), inds_subs, inds.flatten())].reshape(
+            self.num_bin_all, self.nsubs, tnew.shape[1]
+        )
+        c3 = self.c3_shaped[(inds0.flatten(), inds_subs, inds.flatten())].reshape(
+            self.num_bin_all, self.nsubs, tnew.shape[1]
+        )
+
+        # evaluate spline
+        if deriv_order == 0:
+            out = y + c1 * x[:, None, :] + c2 * x2[:, None, :] + c3 * x3[:, None, :]
+            # fix bad values
+            if self.xp.any(inds_bad_left):
+                raise ValueError(
+                    "x points outside of the domain of the spline are not supported when taking derivatives."
+                )
+                temp = self.xp.tile(self.y_shaped[:, 0], (tnew.shape[1], 1)).T
+                out[inds_bad_left] = temp[inds_bad_left]
+
+            if self.xp.any(inds_bad_right):
+                raise ValueError(
+                    "x points outside of the domain of the spline are not supported when taking derivatives."
+                )
+                temp = self.xp.tile(self.y_shaped[:, 0], (tnew.shape[1], 1)).T
+                out[inds_bad_left] = temp[inds_bad_left]
+                temp = self.xp.tile(self.y_shaped[:, -1], (tnew.shape[1], 1)).T
+                out[inds_bad_right] = temp[inds_bad_right]
+
+        else:
+            # derivatives
+            if self.xp.any(inds_bad_right) or self.xp.any(inds_bad_left):
+                raise ValueError(
+                    "x points outside of the domain of the spline are not supported when taking derivatives."
+                )
+            if deriv_order == 1:
+                out = c1 + 2 * c2 * x[:, None, :] + 3 * c3 * x2[:, None, :]
+            elif deriv_order == 2:
+                out = 2 * c2 + 6 * c3 * x[:, None, :]
+            elif deriv_order == 3:
+                out = 6 * c3
+            else:
+                raise ValueError("deriv_order must be within 0 <= deriv_order <= 3.")
+
+        return out.squeeze()
 
 
 class TDInterp:
@@ -516,7 +652,7 @@ class BBHWaveformTD:
         )
 
         if modes is None:
-            self.num_modes = len(self.amp_phase_gen.allowable_modes)
+            self.num_modes = len(self.amp_phase_gen.allowable_modes_hlms)
         else:
             self.num_modes = len(modes)
 
@@ -545,34 +681,6 @@ class BBHWaveformTD:
 
         st = tttttt.perf_counter()
         for _ in range(num):"""
-        splines = CubicSplineInterpolantTD(
-            self.amp_phase_gen.t.T.flatten().copy(),
-            self.amp_phase_gen.hlms_real.transpose(
-                2, 1, 0).flatten().copy(),
-            self.amp_phase_gen.lengths,
-            (2 * self.num_modes + 1),
-            self.num_bin_all,
-            use_gpu=self.use_gpu,
-        )
-        """et = tttttt.perf_counter()
-
-        print("splines", self.num_bin_all, (et - st) /
-              num, (et - st) / num / self.num_bin_all)
-
-        st = tttttt.perf_counter()
-        for _ in range(num):"""
-        # TODO: try single block reduction for likelihood (will probably be worse for smaller batch, but maybe better for larger batch)?
-        template_channels = self.interp_response(
-            self.dataTime,
-            splines,
-            self.amp_phase_gen.lengths,
-            self.data_length,
-            self.num_modes,
-            self.amp_phase_gen.ells,
-            self.amp_phase_gen.mms,
-            self.num_bin_all,
-            dt=1 / sampling_frequency,
-        )
 
         """et = tttttt.perf_counter()
         print("interp", self.num_bin_all, (et - st) /
@@ -692,6 +800,62 @@ def factorial2(n, xp=np):
         out = out[0]
     return out
 
+def EOBGetNRSpinPeakDeltaTv4(ell, m, m1, m2, chi1, chi2):
+
+    eta = m1 * m2 / (m1 + m2) / (m1 + m2)
+    chi = 0.5 * (chi1 + chi2) + 0.5 * (chi1 - chi2) * (m1 - m2) / (m1 + m2) / (
+        1.0 - 2.0 * eta
+    )
+    eta2 = eta * eta
+    eta3 = eta2 * eta
+    chiTo2 = chi * chi
+    chiTo3 = chiTo2 * chi
+
+    # Calibrationv21_Sep8a
+    coeff00 = 2.50499
+    coeff01 = 13.0064
+    coeff02 = 11.5435
+    coeff03 = 0
+    coeff10 = 45.8838
+    coeff11 = -40.3183
+    coeff12 = 0
+    coeff13 = -19.0538
+    coeff20 = 13.0879
+    coeff21 = 0
+    coeff22 = 0
+    coeff23 = 0.192775
+    coeff30 = -716.044
+    coeff31 = 0
+    coeff32 = 0
+    coeff33 = 0
+    res = (
+        coeff00
+        + coeff01 * chi
+        + coeff02 * chiTo2
+        + coeff03 * chiTo3
+        + coeff10 * eta
+        + coeff11 * eta * chi
+        + coeff12 * eta * chiTo2
+        + coeff13 * eta * chiTo3
+        + coeff20 * eta2
+        + coeff21 * eta2 * chi
+        + coeff22 * eta2 * chiTo2
+        + coeff23 * eta2 * chiTo3
+        + coeff30 * eta3
+        + coeff31 * eta3 * chi
+        + coeff32 * eta3 * chiTo2
+        + coeff33 * eta3 * chiTo3
+    )
+
+    # RC: for the 55 mode the attachment is done at tpeak22 -10M, note that since here deltat22 is defined as -deltat22 with respect
+    # to SEOBNRv4 paper, here I need to add 10 M
+    if (ell == 5) and (m == 5):
+        res = res + 10.0
+
+    return res
+
+
+
 def EOBComputeNewtonMultipolePrefixes(m1_in, m2_in, l_in, m_in, xp=np):
     m1_in = xp.atleast_1d(m1_in)
     m2_in = xp.atleast_1d(m2_in)
@@ -774,14 +938,12 @@ class SEOBNRv4PHM:
         self.use_gpu = use_gpu
         if use_gpu:
             self.xp = xp
-            self.compute_hlms = compute_hlms_gpu
             self.root_find = root_find_all_gpu
             #self.root_find_scalar = root_find_scalar_all_gpu
             self.eob_c_class = SEOBNRv5Class_gpu()
 
         else:
             self.xp = np
-            self.compute_hlms = compute_hlms_cpu
             self.root_find = root_find_all_cpu
             #self.root_find_scalar = root_find_scalar_all_cpu
 
@@ -792,49 +954,35 @@ class SEOBNRv4PHM:
         else:
             self.use_buffers = False
 
+        self.allowable_modes_hlms = [(2,2),(2,1),(3,3),(4,4),(5,5)]
+        
+        self.inds_keep_newtonian_prefixes_hlms  = self.xp.zeros(len(self.allowable_modes_hlms), dtype=int)
+
         self.ell_max = ell_max
         lm = []
+        ind_temp = 0
         for l in range(2, ell_max + 1):
             for m in range(1, l + 1):
                 lm.append([l, m])
+                if (l,m) in self.allowable_modes_hlms:
+                    ind_hlm_temp = self.allowable_modes_hlms.index((l, m))
+                    self.inds_keep_newtonian_prefixes_hlms[ind_hlm_temp] = ind_temp
+
+                ind_temp += 1
         l, m = np.asarray(lm).T
         self.l_vals = self.xp.asarray(l, dtype=self.xp.int32)
         self.m_vals = self.xp.asarray(m, dtype=self.xp.int32)
         self.num_lm = np.sum(np.arange(2, self.ell_max + 1))
 
         # TODO: do we really need the (l, 0) modes
-        self.allowable_modes = [
-            # (2, 0),
-            (2, 1),
-            (2, 2),
-            # (3, 0),
-            (3, 1),
-            (3, 2),
-            (3, 3),
-            # (4, 0),
-            (4, 1),
-            (4, 2),
-            (4, 3),
-            (4, 4),
-            # (5, 0),
-            (5, 1),
-            (5, 2),
-            (5, 3),
-            (5, 4),
-            (5, 5),
-            # (6, 0),
-            (6, 2),
-            (6, 4),
-            (6, 6),
-        ]
+        
         self.ells_default = self.xp.array(
-            [temp for (temp, _) in self.allowable_modes], dtype=self.xp.int32
+            [temp for (temp, _) in self.allowable_modes_hlms], dtype=self.xp.int32
         )
-
         self.mms_default = self.xp.array(
-            [temp for (_, temp) in self.allowable_modes], dtype=self.xp.int32
+            [temp for (_, temp) in self.allowable_modes_hlms], dtype=self.xp.int32
         )
-
+    
         self.nparams = 2
         max_step = 400
         #self.HTM_AC = HTMalign_AC()
@@ -843,25 +991,38 @@ class SEOBNRv4PHM:
         self.num_args = 4
         self.num_add_args = 10
         self.num_add_args_total = self.num_add_args + 2 * self.num_lm     
+
+        self.K_val = 0.0
+        self.d5_val = 0.0
+        self.dSO_val = 0.0
+        self.dSS_val = 0.0
+        self.h22_calib = 0.0
         
     def _sanity_check_modes(self, ells, mms):
         for (ell, mm) in zip(ells, mms):
-            if (ell, mm) not in self.allowable_modes:
+            if (ell, mm) not in self.allowable_modes_hlms:
                 raise ValueError(
                     "Requested mode [(l,m) = ({},{})] is not available. Allowable modes include {}".format(
-                        ell, mm, self.allowable_modes
+                        ell, mm, self.allowable_modes_hlms
                     )
                 )
 
-    def setup_add_args_array(self, m_1_scaled, m_2_scaled, chi_1, chi_2, omega0):
+    def setup_class(self, m_1_scaled, m_2_scaled, chi_1, chi_2, omega0):
 
-        prefixes = self.xp.zeros( (self.num_lm * self.num_bin_all,), dtype=self.xp.complex128)
+        eta = m_1_scaled * m_2_scaled / (m_1_scaled + m_2_scaled) ** 2
+        chi_S = (chi_1 + chi_2) / 2
+        chi_A = (chi_1 - chi_2) / 2
+        tplspin = (1 - 2 * eta) * chi_S + (m_1_scaled - m_2_scaled) / (
+            m_1_scaled + m_2_scaled
+        ) * chi_A
 
         # transpose needed
         prefixes = EOBComputeNewtonMultipolePrefixes(
             m_1_scaled, m_2_scaled, self.l_vals, self.m_vals, xp=self.xp).T
 
         prefixes = prefixes.reshape(self.num_lm, self.num_bin_all)
+
+        self.prefixes_hlms = prefixes[self.inds_keep_newtonian_prefixes_hlms, :]
 
         prefixes_new = self.xp.zeros((self.num_lm * 2, self.num_bin_all))
         prefixes_new[0::2] = prefixes.real
@@ -878,13 +1039,17 @@ class SEOBNRv4PHM:
         self.additionalArgs[2] = chi_1
         self.additionalArgs[3] = chi_2
         self.additionalArgs[4] = omega0
-        self.additionalArgs[5] = 0.#3  # K
-        self.additionalArgs[6] = 0.#4  # d5
-        self.additionalArgs[7] = 0.#8  # dSO omega0
-        self.additionalArgs[8] = 0.#6 # dSSomega0
-        self.additionalArgs[9] = 0.#5  # h22_calib
+        self.additionalArgs[5] = self.K_val  # K
+        self.additionalArgs[6] = self.d5_val # d5
+        self.additionalArgs[7] = self.dSO_val  # dSO omega0
+        self.additionalArgs[8] = self.dSS_val # dSSomega0
+        self.additionalArgs[9] = self.h22_calib # h22_calib
 
         self.additionalArgs[10:] = prefixes_new
+        
+        use_hm = 1
+
+        self.eob_c_class.update_information(m_1_scaled, m_2_scaled, eta, tplspin, chi_S, chi_A, use_hm, self.num_bin_all, self.prefixes_hlms)
 
     def get_initial_conditions(
         self, m_1, m_2, chi_1, chi_2, fs=20.0, max_iter=1000, err=1e-12, **kwargs
@@ -899,8 +1064,6 @@ class SEOBNRv4PHM:
         chi_2 = self.xp.asarray(chi_2)
         dt = 1.0 / 16384 / (mt * MTSUN_SI)
 
-        self.setup_add_args_array(m_1_scaled, m_2_scaled, chi_1, chi_2, omega0)
-       
         additionalArgsIn = self.additionalArgs.copy().flatten()
 
         argsIn = self.xp.zeros((self.num_args, self.num_bin_all)).flatten()
@@ -1002,10 +1165,10 @@ class SEOBNRv4PHM:
         m_1_scaled = m_1 / mt
         m_2_scaled = m_2 / mt
         dt = 1.0 / 16384 / (mt * MTSUN_SI)
-        K = np.zeros_like(m_1_scaled)
-        d5 = np.zeros_like(m_1_scaled)
-        dSO = np.zeros_like(m_1_scaled)
-        dSS = np.zeros_like(m_1_scaled)
+        K = np.full_like(m_1_scaled, self.K_val)
+        d5 = np.full_like(m_1_scaled, self.d5_val)
+        dSO = np.full_like(m_1_scaled, self.dSO_val)
+        dSS = np.full_like(m_1_scaled, self.dSS_val)
 
         condBound = self.xp.array([r0, np.full_like(r0, 0.0), pr0, pphi0])
 
@@ -1016,6 +1179,7 @@ class SEOBNRv4PHM:
             condBound.copy(), argsData
         )
 
+        """
         # steps are axis 0
         last_ind = self.xp.where(self.xp.diff(t[1:].astype(bool).astype(int), axis=0) == -1)
 
@@ -1043,6 +1207,7 @@ class SEOBNRv4PHM:
             fix_step=True,
         )
         # TODO: check integrator difference if needed
+        """
         num_steps = num_steps.astype(np.int32)
 
         num_steps_max = num_steps.max().item()
@@ -1056,6 +1221,89 @@ class SEOBNRv4PHM:
 
     def get_hlms(self, traj, m_1_full, m_2_full, chi_1, chi_2, num_steps, ells, mms):
 
+        m_1 = self.xp.asarray(m_1_full / (m_1_full + m_2_full))
+        m_2 = self.xp.asarray(m_2_full / (m_1_full + m_2_full))
+        chi_1 = self.xp.asarray(chi_1)
+        chi_2 = self.xp.asarray(chi_2)
+        r = traj[:, 0]
+        phi = traj[:, 1]
+        pr = traj[:, 2]
+        pphi = L = traj[:, 3]
+
+        numSys_eff = int(np.prod(r.shape))
+        numSys = r.shape[0]
+        traj_length = r.shape[1]
+
+        M = m_1 + m_2
+        mu = m_1 * m_2 / M
+        nu = mu / M
+
+
+        additionalArgsIn = self.xp.tile(self.additionalArgs, (1, traj_length))
+
+        argsIn = self.xp.asarray([r.flatten(), phi.flatten(), pr.flatten(), pphi.flatten()]).flatten()
+        gradient = self.xp.zeros((numSys_eff * self.num_args,))
+        grad_Ham_align_AD_gpu(argsIn, gradient, additionalArgsIn, numSys_eff)
+        
+        argsIn_circ = self.xp.asarray([r.flatten(), phi.flatten(), self.xp.zeros_like(pphi).flatten(), pphi.flatten()]).flatten()
+        gradient_circ = self.xp.zeros((numSys_eff * self.num_args,))
+        grad_Ham_align_AD_gpu(argsIn_circ, gradient_circ, additionalArgsIn, numSys_eff)
+        gradient_circ = gradient_circ.reshape((self.num_args, numSys, traj_length))
+        gradient = gradient.reshape((self.num_args, numSys, traj_length))
+
+        omega_circ = gradient_circ[3]
+        omega = gradient[3]
+        
+        vPhi = 1/(omega_circ**2*r**3)
+        H_val = self.xp.zeros(numSys_eff)
+        
+        evaluate_Ham_align_AD_gpu(
+            H_val, 
+            r.flatten(), 
+            phi.flatten(), 
+            pr.flatten(), 
+            pphi.flatten(), 
+            self.xp.repeat(m_1, traj_length), 
+            self.xp.repeat(m_2, traj_length), 
+            self.xp.repeat(chi_1, traj_length), 
+            self.xp.repeat(chi_2, traj_length), 
+            self.K_val, self.d5_val, self.dSO_val, self.dSS_val, numSys_eff)
+
+        H_val = nu[:, None] * H_val.reshape(numSys, traj_length)
+
+        v = omega**(1./3)
+        # Needed for hCoeffs
+        chiS = 0.5 * (chi_1 + chi_2)
+        chiA = 0.5 * (chi_1 - chi_2)
+        tplspin = (1.0 - 2.0 * nu) * chiS + (m_1 - m_2) / (m_1 + m_2) * chiA
+    
+        h22_calib = self.h22_calib
+        modes = self.xp.zeros((numSys, self.num_modes, traj_length), dtype=self.xp.complex128)
+        tmp = self.xp.zeros((numSys * traj_length), dtype=self.xp.complex128)
+        for mode_i, (ell, mm) in enumerate(zip(ells, mms)):
+            # TODO: need to put in varying amount of trajectory length?
+            newtonian_prefixes = self.prefixes_hlms[mode_i, :].copy()
+            self.eob_c_class.EOBGetSpinFactorizedWaveform(
+                tmp,
+                r.flatten().copy(),
+                phi.flatten().copy(),
+                pr.flatten().copy(),
+                pphi.flatten().copy(),
+                v.flatten(),
+                H_val.flatten(),
+                nu.flatten(),
+                vPhi.flatten(),
+                int(ell),
+                int(mm),
+                newtonian_prefixes,
+                h22_calib,
+                numSys,
+                traj_length 
+            )
+            modes[:, mode_i, :] = tmp.reshape(numSys, traj_length)
+
+        """
+        
         # TODO: check dimensionality (unit to 1?)
         m_1 = self.xp.asarray(m_1_full / (m_1_full + m_2_full))
         m_2 = self.xp.asarray(m_2_full / (m_1_full + m_2_full))
@@ -1071,7 +1319,10 @@ class SEOBNRv4PHM:
         hlms = self.xp.zeros(
             self.num_bin_all * self.num_modes * num_steps_max, dtype=self.xp.complex128
         )
-        self.compute_hlms(
+
+        additionalArgsIn = self.additionalArgs.copy().flatten()
+        
+        self.eob_c_class.compute_hlms(
             hlms,
             r,
             phi,
@@ -1087,9 +1338,12 @@ class SEOBNRv4PHM:
             mms,
             self.num_modes,
             self.num_bin_all,
+            additionalArgsIn,
+            self.num_add_args,  # NOT num_add_args_total
         )
-
-        return hlms.reshape(self.num_bin_all, self.num_modes, num_steps_max)
+        breakpoint()
+        """
+        return modes
 
     @property
     def hlms(self):
@@ -1099,6 +1353,123 @@ class SEOBNRv4PHM:
         hlms_real = self.hlms_real[:, 0:num_modes]
         hlms_imag = self.hlms_real[:, num_modes:2 * num_modes]
         return hlms_real + 1j * hlms_imag
+
+    def compute_full_waveform(self, 
+                dynamics,
+                hlm_interp,
+                t_interp,
+                m_1,
+                m_2,
+                chi_1,
+                chi_2,
+                M,
+                ells,
+                mms,
+                sampling_frequency=1024.0,
+                nrDeltaT=None,
+            ):
+
+        dt = 1 / sampling_frequency
+
+        delta_T = dt / (M * MTSUN_SI)
+        
+        t_in = (self.t / (M[:, None] * MTSUN_SI))
+
+        phi_orb = dynamics[:, 1]
+        phi_spline = CubicSplineInterpolantTD(
+            t_in.T.flatten().copy(),
+            phi_orb.T.flatten().copy(),
+            self.lengths,
+            1,
+            self.num_bin_all,
+            use_gpu=self.use_gpu,
+        )
+
+        r_pr_spline = CubicSplineInterpolantTD(
+            t_in.T.flatten().copy(),
+            dynamics[:, np.array([0, 2])].transpose((2, 1, 0)).flatten().copy(),
+            self.lengths,
+            2,
+            self.num_bin_all,
+            use_gpu=self.use_gpu,
+        )
+        num_pts_new = ((t_in[:, -1] - t_in[:, 0]) / delta_T).astype(int) + 1
+        max_num_pts = num_pts_new.max().item()
+ 
+        t_new = self.xp.tile(self.xp.arange(max_num_pts), (dynamics.shape[0], 1)) * delta_T[:, None] + t_in[:, 0][:, None]
+
+        inds_bad = t_new > t_in.max(axis=1)[:, None]
+        t_new[inds_bad] = self.xp.tile(t_in.max(axis=1)[:, None], (1, max_num_pts))[inds_bad]
+        omega_orb_mine = phi_spline(t_new, deriv_order=1)
+        phi_orb_interp = phi_spline(t_new, deriv_order=0)
+
+        idx_omega_peak = self.xp.argmax(omega_orb_mine, axis=1)
+        t_omega_peak = t_new[(self.xp.arange(self.num_bin_all), idx_omega_peak)]
+
+        tmp = hlm_interp * self.xp.exp(1j * mms[None, :, None] * phi_orb[:, None, :])
+        hlms_real = self.xp.concatenate(
+            [
+                hlm_interp.real,
+                hlm_interp.imag,
+            ],
+            axis=1,
+        )
+
+        splines = CubicSplineInterpolantTD(
+            t_in.T.flatten().copy(),
+            hlms_real.transpose(
+                2, 1, 0).flatten().copy(),
+            self.lengths,
+            2 * self.num_modes,
+            self.num_bin_all,
+            use_gpu=self.use_gpu,
+        )
+
+        result = splines(t_new)
+
+        modes = result[:, 0::2, :] + 1j * result[:, 1::2, :]
+        modes *= self.xp.exp(-1j * mms[None, :, None] * phi_orb_interp[:, None, :])
+
+        if nrDeltaT is None:
+            nrDeltaT = EOBGetNRSpinPeakDeltaTv4(2, 2, m_1, m_2, chi_1, chi_2)
+
+        t_attach = t_omega_peak - nrDeltaT
+        
+        tmp3 = r_pr_spline(t_new)
+        r_new = tmp3[:, 0]
+        pr_new = tmp3[:, 1]
+
+        amp = self.xp.abs(modes)
+        phase = self.xp.unwrap(self.xp.angle(modes))
+
+        if (
+            m % 2
+            and np.abs(m_1 - m_2) < 1e-4
+            and np.abs(chi_1) < 1e-4
+            and np.abs(chi_2) < 1e-4
+        ) or (m % 2 and np.abs(m_1 - m_2) < 1e-4 and np.abs(chi_1 - chi_2) < 1e-4):
+            continue
+
+        breakpoint()
+        """et = tttttt.perf_counter()
+
+        print("splines", self.num_bin_all, (et - st) /
+              num, (et - st) / num / self.num_bin_all)
+
+        st = tttttt.perf_counter()
+        for _ in range(num):"""
+        # TODO: try single block reduction for likelihood (will probably be worse for smaller batch, but maybe better for larger batch)?
+        template_channels = self.interp_response(
+            self.dataTime,
+            splines,
+            self.amp_phase_gen.lengths,
+            self.data_length,
+            self.num_modes,
+            self.amp_phase_gen.ells,
+            self.amp_phase_gen.mms,
+            self.num_bin_all,
+            dt=1 / sampling_frequency,
+        )
 
     def __call__(
         self,
@@ -1114,7 +1485,13 @@ class SEOBNRv4PHM:
         phiRef,
         modes=None,
         fs=20.0,  # Hz
+        nrDeltaT=None,
+        sampling_frequency=16384.0,
     ):
+
+        if nrDeltaT is None:
+            self.nrDeltaT = 0.0
+
         if modes is not None:
             ells = self.xp.asarray(
                 [ell for ell, mm in modes], dtype=self.xp.int32)
@@ -1139,16 +1516,9 @@ class SEOBNRv4PHM:
         m_2_scaled = self.xp.asarray(m2) / M
         chi1z = self.xp.asarray(chi1z)
         chi2z = self.xp.asarray(chi2z)
-        eta = m_1_scaled * m_2_scaled / (m_1_scaled + m_2_scaled) ** 2
-        chi_S = (chi1z + chi2z) / 2
-        chi_A = (chi1z - chi2z) / 2
-        tplspin = (1 - 2 * eta) * chi_S + (m_1_scaled - m_2_scaled) / (
-            m_1_scaled + m_2_scaled
-        ) * chi_A
+        omega0 = fs * (M * MTSUN_SI * np.pi)
 
-        use_hm = 1
-        self.eob_c_class.update_information(m_1_scaled, m_2_scaled, eta, tplspin, chi_S, chi_A, use_hm, self.num_bin_all)
-        
+        self.setup_class(m_1_scaled, m_2_scaled, chi1z, chi2z, omega0)
 
         r0, pphi0, pr0 = self.get_initial_conditions(
             m1, m2, chi1z, chi2z, fs=fs)
@@ -1162,7 +1532,6 @@ class SEOBNRv4PHM:
         hlms = self.get_hlms(traj, m1, m2, chi1z, chi2z,
                              num_steps, ells, mms) / distance[:, None, None]
 
-        self.eob_c_class.deallocate_information()
         phi = traj[:, 1]
 
         self.lengths = num_steps.astype(self.xp.int32)
@@ -1172,13 +1541,28 @@ class SEOBNRv4PHM:
             [
                 hlms[:, :num_steps_max].real,
                 hlms[:, :num_steps_max].imag,
-                phi[:, self.xp.newaxis, :num_steps_max],
             ],
             axis=1,
         )
-
+        self.compute_full_waveform(
+            traj,
+            hlms,
+            self.t,
+            m_1_scaled,
+            m_2_scaled,
+            chi1z,
+            chi2z,
+            M,
+            ells,
+            mms,
+            sampling_frequency=sampling_frequency,
+            nrDeltaT=None
+        )
         self.ells = ells
         self.mms = mms
+
+        self.eob_c_class.deallocate_information()
+        
 
 
 if __name__ == "__main__":
@@ -1244,7 +1628,7 @@ if __name__ == "__main__":
             dec,
             psi,
             geocent_time,
-            sampling_frequency=1024.,
+            sampling_frequency=16384.,
             Tobs=5.0,
             modes=None,
             bufferSize=None,

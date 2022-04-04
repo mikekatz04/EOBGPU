@@ -70,7 +70,7 @@ out = bbh(
     geocent_time[:3],
     sampling_frequency=sampling_frequency,
     Tobs=Tobs,
-    modes=[(2, 2)],
+    #modes=[(2, 2)],
     bufferSize=None,
     fill=False,
     return_type="geocenter_td"  # "detector_fd"

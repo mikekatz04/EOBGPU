@@ -263,7 +263,8 @@ if run_cuda_install:
     )
     pydopr_ext = Extension(
         "eob.pydopr853",
-        sources=["src/EOB.cu", "src/DOPR853.cu", "src/dopr853.pyx"],
+        sources=["src/DOPR853.cu", "src/dopr853.pyx"],
+        extra_object=["build/temp.linux-x86_64-3.9/src/EOB.o"],
         **gpu_extension,
     )
 
