@@ -9,8 +9,11 @@ import numpy as np
 import warnings
 from bbhx.utils.constants import *
 
+import sys
+
 MTSUN_SI = 4.925491025543576e-06
 
+import matplotlib.pyplot as plt
 from bilby.gw.utils import greenwich_mean_sidereal_time
 from bilby.core.utils import speed_of_light
 
@@ -22,6 +25,7 @@ from .ode_for_test import ODE_1
 
 try:
     import cupy as xp
+    import cupy as cp
     #from .pyEOB import compute_hlms as compute_hlms_gpu
     from .pyEOB import root_find_all as root_find_all_gpu
     #from .pyEOB import root_find_scalar_all as root_find_scalar_all_gpu
@@ -52,7 +56,7 @@ sys.path.append(
 #from HTMalign_AC import HTMalign_AC
 #from RR_force_aligned import RR_force_2PN
 #from initial_conditions_aligned import computeIC
-
+from .eobstuff import *
 
 class StoppingCriterion:
     def __init__(self, eob_c_class, max_step, use_gpu=False, read_out_to_cpu=False):
@@ -221,16 +225,20 @@ class CubicSplineInterpolantTD:
         inds = self.xp.zeros((self.num_bin_all, tnew.shape[1]), dtype=int)
 
         # Optional TODO: remove loop ? if speed needed
-        for i, (t, tnew_i) in enumerate(zip(self.t_shaped, tnew)):
-            inds[i] = self.xp.searchsorted(t, tnew_i, side="right") - 1
+        for i, (t, tnew_i, length_i) in enumerate(zip(self.t_shaped, tnew, self.lengths)):
+            inds[i] = self.xp.searchsorted(t[:length_i], tnew_i, side="right") - 1
 
             # fix end value
-            inds[i][tnew_i == t[-1]] = len(t) - 2
+            inds[i][tnew_i == t[length_i - 1]] = length_i - 2
 
         # get values outside the edges
-        inds_bad_left = tnew < self.t_shaped[:, 0][:, None]
-        inds_bad_right = tnew > self.t_shaped[:, -1][:, None]
+        test_ts_end_inds = (self.xp.arange(self.num_bin_all), self.lengths - 1) 
 
+        
+        inds_bad_left = tnew < self.t_shaped[:, 0][:, None]
+        inds_bad_right = tnew > self.t_shaped[test_ts_end_inds][:, None]
+        if self.xp.any(inds_bad_left) or self.xp.any(inds_bad_right):
+            breakpoint()
         if self.xp.any(inds < 0) or self.xp.any(inds >= self.t_shaped.shape[1]):
             warnings.warn(
                 "New t array outside bounds of input t array. These points are filled with edge values."
@@ -273,13 +281,13 @@ class CubicSplineInterpolantTD:
 
         # copy input to all splines
         elif tnew.ndim == 1:
+            raise NotImplementedError
             tnew = self.xp.tile(tnew, (self.t.shape[0], 1))
 
         tnew = self.xp.atleast_2d(tnew)
 
         # get indices into spline
         inds, inds_bad_left, inds_bad_right = self._get_inds(tnew)
-
         # x value for spline
 
         # indexes for which spline
@@ -294,9 +302,10 @@ class CubicSplineInterpolantTD:
         x3 = x2 * x
 
         inds0 = self.xp.repeat(inds0.flatten(), self.nsubs)
-        inds = self.xp.repeat(inds.flatten(), self.nsubs)
+        inds = np.tile(inds, (self.nsubs, 1)).flatten()
 
-        inds_subs = self.xp.tile(self.xp.arange(self.nsubs), (self.num_bin_all * tnew.shape[1], 1)).flatten()
+        #flattens itself
+        inds_subs = self.xp.repeat(self.xp.tile(self.xp.arange(self.nsubs), (self.num_bin_all, 1))[:, :, None], tnew.shape[1])
         # get spline coefficients
         y = self.y_shaped[(inds0.flatten(), inds_subs, inds.flatten())].reshape(
             self.num_bin_all, self.nsubs, tnew.shape[1]
@@ -854,6 +863,776 @@ def EOBGetNRSpinPeakDeltaTv4(ell, m, m1, m2, chi1, chi2):
 
     return res
 
+def CombineTPLEQMFits(eta, A1, fEQ, fTPL):
+    eta2 = eta * eta
+    # Impose that TPL and equal-mass limit are exactly recovered
+    A0 = (
+        -0.00099601593625498 * A1
+        - 0.00001600025600409607 * fEQ
+        + 1.000016000256004 * fTPL
+    )
+    A2 = -3.984063745019967 * A1 + 16.00025600409607 * fEQ - 16.0002560041612 * fTPL
+    # Final formula
+    return A0 + A1 * eta + A2 * eta2
+
+
+def EOBGetNRSpinPeakAmplitudeV4(ell, m, m1, m2, chiS, chiA):
+
+    eta = (m1 * m2) / ((m1 + m2) * (m1 + m2))
+    dM = xp.sqrt(1.0 - 4.0 * eta)
+
+    if m1 < m2:
+        tempm1 = m1
+        m1 = m2
+        m2 = tempm1
+        chiA = -chiA
+
+    eta2 = eta * eta
+    chi = chiS + chiA * (m1 - m2) / (m1 + m2) / (1.0 - 2.0 * eta)
+    chi21 = chiS * dM / (1.0 - 1.3 * eta) + chiA
+    chi33 = chiS * dM + chiA
+    chi44 = chiS * (1 - 5 * eta) + chiA * dM
+    chi2 = chi * chi
+    chi3 = chi * chi2
+
+    if ell == 2:
+        if m == 2:
+            # TPL fit
+            fTPL = (
+                1.4528573105413543
+                + 0.16613449160880395 * chi
+                + 0.027355646661735258 * chi2
+                - 0.020072844926136438 * chi3
+            )
+            # Equal-mass fit
+            fEQ = (
+                1.577457498227
+                - 0.0076949474494639085 * chi
+                + 0.02188705616693344 * chi2
+                + 0.023268366492696667 * chi3
+            )
+            # Global fit coefficients
+            e0 = -0.03442402416125921
+            e1 = -1.218066264419839
+            e2 = -0.5683726304811634
+            e3 = 0.4011143761465342
+            A1 = e0 + e1 * chi + e2 * chi2 + e3 * chi3
+
+            # adjusted
+            
+            # res = eta * CombineTPLEQMFits(eta, A1, fEQ, fTPL)
+
+            # filled in here for vectorize capability
+            eta2 = eta * eta
+            # Impose that TPL and equal-mass limit are exactly recovered
+            A0 = (
+                -0.00099601593625498 * A1
+                - 0.00001600025600409607 * fEQ
+                + 1.000016000256004 * fTPL
+            )
+            A2 = -3.984063745019967 * A1 + 16.00025600409607 * fEQ - 16.0002560041612 * fTPL
+            # Final formula
+            res = eta * (A0 + A1 * eta + A2 * eta2)
+        
+        elif m == 1:
+            res = -(
+                (0.29256703361640224 - 0.19710255145276584 * eta) * eta * chi21
+                + dM
+                * eta
+                * (
+                    -0.42817941710649793
+                    + 0.11378918021042442 * eta
+                    - 0.7736772957051212 * eta2
+                    + chi21 * chi21 * (0.047004057952214004 - eta * 0.09326128322462478)
+                )
+                + dM
+                * eta
+                * chi21
+                * (-0.010195081244587765 + 0.016876911550777807 * chi21 * chi21)
+            )
+
+    elif ell == 3:
+        if m == 3:
+            res = (
+                0.10109183988848384 * eta
+                - 0.4704095462146807 * eta2
+                + 1.0735457779890183 * eta2 * eta
+            ) * chi33 + dM * (
+                0.5636580081367962 * eta
+                - 0.054609013952480856 * eta2
+                + 2.3093699480319234 * eta2 * eta
+                + chi33
+                * chi33
+                * (0.029812986680919126 * eta - 0.09688097244145283 * eta2)
+            )
+
+    elif ell == 4:
+        if m == 4:
+            res = (
+                eta
+                * (
+                    0.2646580063832686
+                    + 0.067584186955327 * chi44
+                    + 0.02925102905737779 * chi44 * chi44
+                )
+                + eta2
+                * (
+                    -0.5658246076387973
+                    - 0.8667455348964268 * chi44
+                    + 0.005234192027729502 * chi44 * chi44
+                )
+                + eta
+                * eta2
+                * (
+                    -2.5008294352355405
+                    + 6.880772754797872 * chi44
+                    - 1.0234651570264885 * chi44 * chi44
+                )
+                + eta2 * eta2 * (7.6974501716202735 - 16.551524307203252 * chi44)
+            )
+
+    elif ell == 5:
+        if m == 5:
+            res = (
+                0.128621 * dM * eta
+                - 0.474201 * dM * eta * eta
+                + 1.0833 * dM * eta * eta * eta
+                + 0.0322784 * eta * chi33
+                - 0.134511 * chi33 * eta * eta
+                + 0.0990202 * chi33 * eta * eta * eta
+            )
+
+    return res
+
+
+EOBGetNRSpinPeakAmplitudeV4 = xp.vectorize(EOBGetNRSpinPeakAmplitudeV4)
+
+
+def EOBGetNRSpinPeakADotV4(ell, m, m1, m2, chiS, chiA):
+
+    eta = (m1 * m2) / ((m1 + m2) * (m1 + m2))
+    dM = xp.sqrt(1.0 - 4.0 * eta)
+    dM2 = dM * dM
+
+    if m1 < m2:
+        # RC: The fits for the HMs are done under the assumption m1>m2, so if m2>m1 we just swap the two bodies
+        tempm1 = m1
+        m1 = m2
+        m2 = tempm1
+        chiA = -chiA
+
+    eta2 = eta * eta
+    chi21 = chiS * dM / (1.0 - 2.0 * eta) + chiA
+    chi33 = chiS * dM + chiA
+    chi44 = chiS * (1 - 7 * eta) + chiA * dM
+
+    if ell == 2:
+        if m == 2:
+            res = 0.0
+        elif m == 1:
+            res = (
+                dM * eta * (0.007147528020812309 - eta * 0.035644027582499495)
+                + dM * eta * chi21 * (-0.0087785131749995 + eta * 0.03054672006241107)
+                + eta
+                * 0.00801714459112299
+                * xp.abs(
+                    -dM
+                    * (
+                        0.7875612917853588
+                        + eta * 1.161274164728927
+                        + eta2 * 11.306060006923605
+                    )
+                    + chi21
+                )
+            )
+    elif ell == 3:
+        if m == 3:
+            res = dM * eta * (
+                -0.00309943555972098 + eta * 0.010076527264663805
+            ) * chi33 * chi33 + eta * 0.0016309606446766923 * xp.sqrt(
+                dM2 * (8.811660714437027 + 104.47752236009688 * eta)
+                + dM * chi33 * (-5.352043503655119 + eta * 49.68621807460999)
+                + chi33 * chi33
+            )
+
+    elif ell == 4:
+        if m == 4:
+            res = (
+                eta
+                * (
+                    0.004347588211099233
+                    - 0.0014612210699052148 * chi44
+                    - 0.002428047910361957 * chi44 * chi44
+                )
+                + eta2
+                * (
+                    0.023320670701084355
+                    - 0.02240684127113227 * chi44
+                    + 0.011427087840231389 * chi44 * chi44
+                )
+                + eta * eta2 * (-0.46054477257132803 + 0.433526632115367 * chi44)
+                + eta2 * eta2 * (1.2796262150829425 - 1.2400051122897835 * chi44)
+            )
+    elif ell == 5:
+        if m == 5:
+            res = eta * (
+                dM * (-0.008389798844109389 + 0.04678354680410954 * eta)
+                + dM * chi33 * (-0.0013605616383929452 + 0.004302712487297126 * eta)
+                + dM
+                * chi33
+                * chi33
+                * (-0.0011412109287400596 + 0.0018590391891716925 * eta)
+                + 0.0002944221308683548
+                * xp.abs(dM * (37.11125499129578 - 157.79906814398277 * eta) + chi33)
+            )
+    #else:
+    #    raise NotImplementedError(f"The requested ({ell,m}) mode is not available!")
+    return res
+
+
+EOBGetNRSpinPeakADotV4 = xp.vectorize(EOBGetNRSpinPeakADotV4)
+
+def EOBGetNRSpinPeakADDotV4(ell, m, m1, m2, chiS, chiA):
+
+    eta = (m1 * m2) / ((m1 + m2) * (m1 + m2))
+    dM = xp.sqrt(1.0 - 4.0 * eta)
+    if m1 < m2:
+        # RC: The fits for the HMs are done under the assumption m1>m2, so if m2>m1 we just swap the two bodies
+        tempm1 = m1
+        m1 = m2
+        m2 = tempm1
+        chiA = -chiA
+
+    eta2 = eta * eta
+    chi21 = chiS * dM / (1.0 - 2.0 * eta) + chiA
+    chi = chiS + chiA * (m1 - m2) / (m1 + m2) / (1.0 - 2.0 * eta)
+    chi33 = chiS * dM + chiA
+    chiMinus1 = -1.0 + chi
+
+    if ell == 2:
+        if m == 2:
+            # TPL fit
+            fTPL = (
+                0.002395610769995033 * chiMinus1
+                - 0.00019273850675004356 * chiMinus1 * chiMinus1
+                - 0.00029666193167435337 * chiMinus1 * chiMinus1 * chiMinus1
+            )
+            # Equal-mass fit
+            fEQ = -0.004126509071377509 + 0.002223999138735809 * chi
+            # Global fit coefficients
+            e0 = -0.005776537350356959
+            e1 = 0.001030857482885267
+            A1 = e0 + e1 * chi
+            # res = eta * CombineTPLEQMFits(eta, A1, fEQ, fTPL)
+
+            # filled in here for vectorize capability
+            eta2 = eta * eta
+            # Impose that TPL and equal-mass limit are exactly recovered
+            A0 = (
+                -0.00099601593625498 * A1
+                - 0.00001600025600409607 * fEQ
+                + 1.000016000256004 * fTPL
+            )
+            A2 = -3.984063745019967 * A1 + 16.00025600409607 * fEQ - 16.0002560041612 * fTPL
+            # Final formula
+            res = eta * (A0 + A1 * eta + A2 * eta2)
+
+        elif m == 1:
+            res = eta * dM * 0.00037132201959950333 - xp.abs(
+                dM * eta * (-0.0003650874948532221 - eta * 0.003054168419880019)
+                + dM
+                * eta
+                * chi21
+                * chi21
+                * (
+                    -0.0006306232037821514
+                    - eta * 0.000868047918883389
+                    + eta2 * 0.022306229435339213
+                )
+                + eta * chi21 * chi21 * chi21 * 0.0003402427901204342
+                + dM * eta * chi21 * 0.00028398490492743
+            )
+    elif ell == 3:
+        if m == 3:
+            res = dM * eta * (
+                0.0009605689249339088 - 0.00019080678283595965 * eta
+            ) * chi33 - 0.00015623760412359145 * eta * xp.abs(
+                dM
+                * (
+                    4.676662024170895
+                    + 79.20189790272218 * eta
+                    - 1097.405480250759 * eta2
+                    + 6512.959044311574 * eta * eta2
+                    - 13263.36920919937 * eta2 * eta2
+                )
+                + chi33
+            )
+    elif ell == 4:
+        if m == 4:
+            res = (
+                eta * (-0.000301722928925693 + 0.0003215952388023551 * chi)
+                + eta2 * (0.006283048344165004 + 0.0011598784110553046 * chi)
+                + eta2 * eta * (-0.08143521096050622 - 0.013819464720298994 * chi)
+                + eta2 * eta2 * (0.22684871200570564 + 0.03275749240408555 * chi)
+            )
+    elif ell == 5:
+        if m == 5:
+            res = eta * (
+                dM * (0.00012727220842255978 + 0.0003211670856771251 * eta)
+                + dM * chi33 * (-0.00006621677859895541 + 0.000328855327605536 * eta)
+                + chi33
+                * chi33
+                * (-0.00005824622885648688 + 0.00013944293760663706 * eta)
+            )
+    #else:
+    #    raise NotImplementedError(f"The requested ({ell,m}) mode is not available!")
+    return res
+
+EOBGetNRSpinPeakADDotV4 = xp.vectorize(EOBGetNRSpinPeakADDotV4)
+
+
+def EOBGetNRSpinPeakOmegaV4(ell, m, eta, a):
+
+    chi = a
+    eta2 = eta * eta
+    if ell == 2:
+        if m == 2:
+            # From TPL fit
+            c0 = 0.5626787200433265
+            c1 = -0.08706198756945482
+            c2 = 25.81979479453255
+            c3 = 25.85037751197443
+            # From equal-mass fit
+            d2 = 7.629921628648589
+            d3 = 10.26207326082448
+            # Combine TPL and equal-mass
+            A4 = d2 + 4 * (d2 - c2) * (eta - 0.25)
+            A3 = d3 + 4 * (d3 - c3) * (eta - 0.25)
+            c4 = 0.00174345193125868
+            # Final formula
+            res = c0 + (c1 + c4 * chi) * xp.log(A3 - A4 * chi)
+        elif m == 1:
+            res = (
+                0.1743194440996283
+                + eta * 0.1938944514123048
+                + 0.1670063050527942 * eta2
+                + 0.053508705425291826 * chi
+                - eta * chi * 0.18460213023455802
+                + eta2 * chi * 0.2187305149636044
+                + chi * chi * 0.030228846150378793
+                - eta * chi * chi * 0.11222178038468673
+            )
+    elif ell == 3:
+        if m == 3:
+            res = (
+                0.3973947703114506
+                + 0.16419332207671075 * chi
+                + 0.1635531186118689 * chi * chi
+                + 0.06140164491786984 * chi * chi * chi
+                + eta
+                * (
+                    0.6995063984915486
+                    - 0.3626744855912085 * chi
+                    - 0.9775469868881651 * chi * chi
+                )
+                + eta2
+                * (
+                    -0.3455328417046369
+                    + 0.31952307610699876 * chi
+                    + 1.9334166149686984 * chi * chi
+                )
+            )
+    elif ell == 4:
+        if m == 4:
+            res = (
+                0.5389359134370971
+                + 0.16635177426821202 * chi
+                + 0.2075386047689103 * chi * chi
+                + 0.15268115749910835 * chi * chi * chi
+                + eta
+                * (
+                    0.7617423831337586
+                    + 0.009587856087825369 * chi
+                    - 1.302303785053009 * chi * chi
+                    - 0.5562751887042064 * chi * chi * chi
+                )
+                + eta2
+                * (
+                    0.9675153069365782
+                    - 0.22059322127958586 * chi
+                    + 2.678097398558074 * chi * chi
+                )
+                - eta2 * eta * 4.895381222514275
+            )
+    elif ell == 5:
+        if m == 5:
+            res = (
+                0.6437545281817488
+                + 0.22315530037902315 * chi
+                + 0.2956893357624277 * chi * chi
+                + 0.17327819169083758 * chi * chi * chi
+                + eta
+                * (
+                    -0.47017798518175785
+                    - 0.3929010618358481 * chi
+                    - 2.2653368626130654 * chi * chi
+                    - 0.5512998466154311 * chi * chi * chi
+                )
+                + eta2
+                * (
+                    2.311483807604238
+                    + 0.8829339243493562 * chi
+                    + 5.817595866020152 * chi * chi
+                )
+            )
+
+    #else:
+    #    raise NotImplementedError(f"The requested ({ell,m}) mode is not available!")
+    return res
+
+EOBGetNRSpinPeakOmegaV4 = xp.vectorize(EOBGetNRSpinPeakOmegaV4)
+
+
+def EOBGetNRSpinPeakOmegaDotV4(ell, m, eta, a):
+
+    chi = a
+    eta2 = eta * eta
+
+    if ell == 2:
+        if m == 2:
+            # TPL fit
+            fTPL = -0.011209791668428353 + (
+                0.0040867958978563915 + 0.0006333925136134493 * chi
+            ) * xp.log(68.47466578100956 - 58.301487557007206 * chi)
+            # Equal-mass fit
+            fEQ = 0.01128156666995859 + 0.0002869276768158971 * chi
+            # Global fit coefficients
+            e0 = 0.01574321112717377
+            e1 = 0.02244178140869133
+            A1 = e0 + e1 * chi
+            # res = eta * CombineTPLEQMFits(eta, A1, fEQ, fTPL)
+
+            # filled in here for vectorize capability
+            eta2 = eta * eta
+            # Impose that TPL and equal-mass limit are exactly recovered
+            A0 = (
+                -0.00099601593625498 * A1
+                - 0.00001600025600409607 * fEQ
+                + 1.000016000256004 * fTPL
+            )
+            A2 = -3.984063745019967 * A1 + 16.00025600409607 * fEQ - 16.0002560041612 * fTPL
+            # Final formula
+            res = eta * (A0 + A1 * eta + A2 * eta2)
+
+        elif m == 1:
+            res = (
+                0.0070987396362959514
+                + eta * 0.024816844694685373
+                - eta2 * 0.050428973182277494
+                + eta * eta2 * 0.03442040062259341
+                - chi * 0.0017751850002442097
+                + eta * chi * 0.004244058872768811
+                - eta2 * chi * 0.031996494883796855
+                - chi * chi * 0.0035627260615894584
+                + eta * chi * chi * 0.01471807973618255
+                - chi * chi * chi * 0.0019020967877681962
+            )
+    elif ell == 3:
+        if m == 3:
+            res = (
+                0.010337157192240338
+                - 0.0053067782526697764 * chi * chi
+                - 0.005087932726777773 * chi * chi * chi
+                + eta
+                * (
+                    0.027735564986787684
+                    + 0.018864151181629343 * chi
+                    + 0.021754491131531044 * chi * chi
+                    + 0.01785477515931398 * chi * chi * chi
+                )
+                + eta2 * (0.018084233854540898 - 0.08204268775495138 * chi)
+            )
+    elif ell == 4:
+        if m == 4:
+            res = (
+                0.013997911323773867
+                - 0.0051178205260273574 * chi
+                - 0.0073874256262988 * chi * chi
+                + eta
+                * (
+                    0.0528489379269367
+                    + 0.01632304766334543 * chi
+                    + 0.02539072293029433 * chi * chi
+                )
+                + eta2 * (-0.06529992724396189 + 0.05782894076431308 * chi)
+            )
+    elif ell == 5:
+        if m == 5:
+            res = (
+                0.01763430670755021
+                - 0.00024925743340389135 * chi
+                - 0.009240404217656968 * chi * chi
+                - 0.007907831334704586 * chi * chi * chi
+                + eta
+                * (
+                    -0.1366002854361568
+                    + 0.0561378177186783 * chi
+                    + 0.16406275673019852 * chi * chi
+                    + 0.07736232247880881 * chi * chi * chi
+                )
+                + eta2
+                * (
+                    0.9875890632901151
+                    - 0.31392112794887855 * chi
+                    - 0.5926145463423832 * chi * chi
+                )
+                - 1.6943356548192614 * eta2 * eta
+            )
+    #else:
+    #    raise NotImplementedError(f"The requested ({ell,m}) mode is not available!")
+
+    return res
+
+EOBGetNRSpinPeakOmegaDotV4 = xp.vectorize(EOBGetNRSpinPeakOmegaDotV4)
+
+def EOBCalculateNQCCoefficientsV4_freeattach(
+    amplitude, phase, r, pr, omega_orb, ell, m, time_peak, time, m1, m2, chi1, chi2,nrDeltaT, xp=None
+):
+    """
+    This is just like the SEOBNRv4HM function but allows nrDeltaT to be passed in, instead of
+    internally calculated.
+    """
+    if xp is None:
+        xp = np
+        use_gpu = False
+    if xp == cp:
+        use_gpu = True
+
+    num_bin_all, num_modes, length = amplitude.shape 
+
+    coeffs = {}
+
+    eta = (m1 * m2) / ((m1 + m2) * (m1 + m2))
+    chiA = (chi1 - chi2) / 2
+    chiS = (chi1 + chi2) / 2
+
+    print("check")
+    nrDeltaT[:, :-1] = 1.0
+    nrDeltaT[:, -1] = 1.0 + 10.0
+    # num bin x num modes
+    nrTimePeak = time_peak[:, None] - nrDeltaT
+    #print(f"nrTimePeak={nrTimePeak}")
+    # Evaluate the Qs at the right time and build Q matrix (LHS)
+    idx = xp.argmin(xp.abs(time[:, None]-nrTimePeak[:, :, None]), axis=-1)
+    N = 7
+
+    num_t_fit = (time.shape[1] - (idx - N)).astype(xp.int32)
+    num_t_fit_max = num_t_fit.max().item()
+    t_fit_inds = xp.tile((idx - N)[:, :, None], num_t_fit_max) + xp.tile(xp.arange(num_t_fit_max), (amplitude.shape[:-1] + (1,)))
+
+    t_fit_inds[t_fit_inds > length] = -1
+    t_fit = xp.take_along_axis(time[:, None, :], t_fit_inds, axis=-1)
+    
+
+    r_fit = xp.take_along_axis(r[:, None, :], t_fit_inds, axis=-1)
+    omega_orb_fit = xp.take_along_axis(omega_orb[:, None, :], t_fit_inds, axis=-1)
+    pr_fit = xp.take_along_axis(pr[:, None, :], t_fit_inds, axis=-1)
+    amplitude_fit = xp.take_along_axis(amplitude, t_fit_inds, axis=-1)
+    phase_fit = xp.take_along_axis(phase, t_fit_inds, axis=-1)
+
+    # Eq (3) in T1100433
+    rOmega = r_fit * omega_orb_fit
+    q1 = pr_fit ** 2 / rOmega ** 2
+    q2 = q1 / r_fit
+    q3 = q2 / xp.sqrt(r_fit)
+
+    # Eq (4) in T1100433
+    p1 = pr_fit / rOmega
+    p2 = p1 * pr_fit ** 2
+
+    # Compute the time offset
+    #nrDeltaT = EOBGetNRSpinPeakDeltaTv4(ell, m, m1, m2, chi1, chi2)
+
+    # nrDeltaT defined in EOBGetNRSpinPeakDeltaT is a minus sign different from Eq. (33) of Taracchini et al.
+    # Therefore, the plus sign in Eq. (21) of Taracchini et al and Eq. (18) of DCC document T1100433v2 is
+    # changed to a minus sign here.
+
+    # See below Eq(9)
+    
+    q1LM = q1 * amplitude_fit
+    q2LM = q2 * amplitude_fit
+    q3LM = q3 * amplitude_fit
+
+    t_fit[t_fit_inds == -1] = 0.0
+    q1LM[t_fit_inds == -1] = 0.0
+    q2LM[t_fit_inds == -1] = 0.0
+    q3LM[t_fit_inds == -1] = 0.0
+
+    intrp_q1LM = CubicSplineInterpolantTD(
+            t_fit.transpose(2, 1, 0).flatten().copy(),
+            q1LM.transpose(2, 1, 0).flatten().copy(),
+            num_t_fit.T.flatten(),
+            1,
+            num_bin_all * num_modes,
+            use_gpu=use_gpu,
+        )
+
+    intrp_q2LM = CubicSplineInterpolantTD(
+            t_fit.transpose(2, 1, 0).flatten().copy(),
+            q2LM.transpose(2, 1, 0).flatten().copy(),
+            num_t_fit.T.flatten(),
+            1,
+            num_bin_all * num_modes,
+            use_gpu=use_gpu,
+        )
+
+    intrp_q3LM = CubicSplineInterpolantTD(
+            t_fit.transpose(2, 1, 0).flatten().copy(),
+            q3LM.transpose(2, 1, 0).flatten().copy(),
+            num_t_fit.T.flatten(),
+            1,
+            num_bin_all * num_modes,
+            use_gpu=use_gpu,
+        )
+    
+    
+
+    nrTimePeak_in = nrTimePeak.T.reshape(-1, 1)
+    Q = xp.zeros((num_bin_all, num_modes, 3, 3))
+    for i in range(3):
+        Q[:, :, i, 0] = intrp_q1LM(nrTimePeak_in, deriv_order=i).reshape(num_modes, num_bin_all).T
+        Q[:, :, i, 1] = intrp_q2LM(nrTimePeak_in, deriv_order=i).reshape(num_modes, num_bin_all).T
+        Q[:, :, i, 2] = intrp_q3LM(nrTimePeak_in, deriv_order=i).reshape(num_modes, num_bin_all).T
+
+    # Build the RHS
+
+    # Compute the NR fits
+
+    ell = xp.tile(ell, (num_bin_all, 1)).flatten()
+    m = xp.tile(m, (num_bin_all, 1)).flatten()
+    m1 = xp.repeat(m1, num_modes)
+    m2 = xp.repeat(m2, num_modes)
+    chiS = xp.repeat(chiS, num_modes)
+    chiA = xp.repeat(chiA, num_modes)
+    nra = xp.abs(EOBGetNRSpinPeakAmplitudeV4(ell, m, m1, m2, chiS, chiA)).reshape(num_bin_all, num_modes)
+    
+    nraDot = EOBGetNRSpinPeakADotV4(ell, m, m1, m2, chiS, chiA).reshape(num_bin_all, num_modes)
+    """
+    RC: In SEOBNRv4 nraDot is zero because the NQC are defining the peak of the 22 mode
+    which by definition has a first derivative	equal to 0.
+    For SEOBNRv4HM we are not computing the NQC at the peak fo the modes (see Eq.(4.3))
+    of https://arxiv.org/pdf/1803.10701.pdf, so first the derivative
+    is entering as a fitted coefficient.
+    """
+    nraDDot = EOBGetNRSpinPeakADDotV4(ell, m, m1, m2, chiS, chiA).reshape(num_bin_all, num_modes)
+
+    # Compute amplitude and derivatives at the right time
+
+    intrp_amp = CubicSplineInterpolantTD(
+            t_fit.transpose(2, 1, 0).flatten().copy(),
+            amplitude_fit.transpose(2, 1, 0).flatten().copy(),
+            num_t_fit.T.flatten(),
+            1,
+            num_bin_all * num_modes,
+            use_gpu=use_gpu,
+        )
+
+    amp = intrp_amp(nrTimePeak_in, deriv_order=0).reshape(num_modes, num_bin_all).T
+    damp = intrp_amp(nrTimePeak_in, deriv_order=1).reshape(num_modes, num_bin_all).T
+    ddamp = intrp_amp(nrTimePeak_in, deriv_order=2).reshape(num_modes, num_bin_all).T
+
+    # Assemble RHS
+    amps = xp.array([nra - amp, nraDot - damp, nraDDot - ddamp]).transpose((1, 2, 0))
+
+    # Solve the equation Q*coeffs = amps
+    res = xp.linalg.solve(Q, amps)
+
+    coeffs["a1"] = res[:, :, 0].copy()
+    coeffs["a2"] = res[:, :, 1].copy()
+    coeffs["a3"] = res[:, :, 2].copy()
+
+    # Now we (should) have calculated the a values. Now we can do the b values
+    # Populate the P matrix in Eq. 18 of the LIGO DCC document T1100433v2
+    intrp_p1 = CubicSplineInterpolantTD(
+            t_fit.transpose(2, 1, 0).flatten().copy(),
+            p1.transpose(2, 1, 0).flatten().copy(),
+            num_t_fit.T.flatten(),
+            1,
+            num_bin_all * num_modes,
+            use_gpu=use_gpu,
+        )
+    intrp_p2 = CubicSplineInterpolantTD(
+            t_fit.transpose(2, 1, 0).flatten().copy(),
+            p2.transpose(2, 1, 0).flatten().copy(),
+            num_t_fit.T.flatten(),
+            1,
+            num_bin_all * num_modes,
+            use_gpu=use_gpu,
+        )
+    P = xp.zeros((num_bin_all, num_modes, 2, 2))
+    for i in range(1, 3):
+        P[:, :, i - 1, 0] = -intrp_p1(nrTimePeak_in, deriv_order=i).reshape(num_modes, num_bin_all).T
+        P[:, :, i - 1, 1] = -intrp_p2(nrTimePeak_in, deriv_order=i).reshape(num_modes, num_bin_all).T
+
+    # TODO: put all of these together into one and evalute at once (in C + derivative in C?)
+    intrp_phase = CubicSplineInterpolantTD(
+        t_fit.transpose(2, 1, 0).flatten().copy(),
+        phase_fit.transpose(2, 1, 0).flatten().copy(),
+        num_t_fit.T.flatten(),
+        1,
+        num_bin_all * num_modes,
+        use_gpu=use_gpu,
+    )
+
+    omega = intrp_phase(nrTimePeak_in, deriv_order=1).reshape(num_modes, num_bin_all).T
+    omegaDot = intrp_phase(nrTimePeak_in, deriv_order=2).reshape(num_modes, num_bin_all).T
+
+    # Since the phase can be decreasing, we need to take care not to have a -ve frequency
+    omega_tmp = omega.copy()
+    omegaDot_tmp = omegaDot.copy()
+
+    omega = xp.abs(omega_tmp)
+    omegaDot = (omega_tmp * omegaDot_tmp > 0.0) * xp.abs(omegaDot_tmp) + (omega_tmp * omegaDot_tmp <= 0.0) * -xp.abs(omegaDot_tmp)
+    """if omega * omegaDot > 0.0:
+        omega = np.abs(omega)
+        omegaDot = np.abs(omegaDot)
+    else:
+        omega = np.abs(omega)
+        omegaDot = -np.abs(omegaDot)"""
+
+    # recalculate for the flattened case with all modes
+    eta = (m1 * m2) / ((m1 + m2) * (m1 + m2))
+    nromega = EOBGetNRSpinPeakOmegaV4(
+        ell, m, eta, chiS + chiA * (m1 - m2) / (m1 + m2) / (1.0 - 2.0 * eta)
+    ).reshape(num_bin_all, num_modes)
+    nromegaDot = EOBGetNRSpinPeakOmegaDotV4(
+        ell, m, eta, chiS + chiA * (m1 - m2) / (m1 + m2) / (1.0 - 2.0 * eta)
+    ).reshape(num_bin_all, num_modes)
+
+    omegas = xp.array([nromega - omega, nromegaDot - omegaDot]).transpose((1, 2, 0))
+    # Solve the equation Q*coeffs = amps
+    res = xp.linalg.solve(P, omegas)
+    coeffs["b1"] = res[:, :, 0].copy()
+    coeffs["b2"] = res[:, :, 1].copy()
+
+    return coeffs
+
+
+def EOBNonQCCorrection (r,phi,pr,pphi, omega,coeffs, xp=None):
+    "Evaluate the SEOBNRv4 NQC correction, given the coefficients"
+
+    if xp is None:
+        xp = np
+
+    sqrtR = xp.sqrt (r)
+    rOmega = r * omega;
+    rOmegaSq = rOmega * rOmega
+    p = pr
+    mag = 1. + (p * p / rOmegaSq) * (coeffs['a1']+ coeffs['a2'] / r + (coeffs['a3'] + coeffs['a3S']) / (r *sqrtR)+ coeffs['a4'] / (r * r) + coeffs['a5'] / (r * r * sqrtR))
+    phase = coeffs['b1'] * p / rOmega + p * p * p / rOmega * (coeffs['b2']+coeffs['b3'] / sqrtR +coeffs['b4'] / r)
+
+    nqc = mag * xp.cos (phase) + 1j * mag * xp.sin (phase)
+    return nqc
 
 
 def EOBComputeNewtonMultipolePrefixes(m1_in, m2_in, l_in, m_in, xp=np):
@@ -930,6 +1709,74 @@ def EOBComputeNewtonMultipolePrefixes(m1_in, m2_in, l_in, m_in, xp=np):
 
     prefix = n * eta * c
     return prefix
+    
+
+def compute_MR_mode_free(
+    t, m1, m2, chi1, chi2, attach_params, ell, m, t_match=0, phi_match=0, debug=False, xp=None
+):
+
+    if xp == None:
+        xp = np
+    # Step 1 - use the NR fits for amplitude and frequency at attachment time
+    chiA = (chi1 - chi2) / 2
+    chiS = (chi1 + chi2) / 2
+    eta = m1 * m2 / (m1 + m2) ** 2
+    chi = 0.5 * (chi1 + chi2) + 0.5 * (chi1 - chi2) * (m1 - m2) / (m1 + m2) / (
+        1.0 - 2.0 * eta
+    )
+    nra = attach_params["amp"]
+    nraDot = attach_params["damp"]
+    nromega = attach_params["omega"]
+
+    # Step 2 - compute the  QNMs
+    final_mass = attach_params["final_mass"]
+    final_spin = attach_params["final_spin"]
+
+    omega_complex = xp.asarray([compute_QNM(int(ell_i), int(m_i), 0, final_spin.get(), final_mass.get()).conjugate() for (ell_i, m_i) in zip(ell, m)]).T
+    sigmaR = -np.imag(omega_complex)
+    sigmaI = -np.real(omega_complex)
+
+    
+    # Step 3 - use the fits for the free coefficients in the RD anzatse
+    c1f = EOBCalculateRDAmplitudeCoefficient1(ell, m, eta, chi, xp=xp)
+    c2f = EOBCalculateRDAmplitudeCoefficient2(ell, m, eta, chi, xp=xp)
+
+    # Ensure that the ampitude of the (2,2) mode has a maximum at t_match
+    #if ell == 2 and m == 2:
+    #    if sigmaR > 2.0 * c1f * xp.tanh(c2f):
+    #        c1f = sigmaR / (2.0 * xp.tanh(c2f))
+
+    c1f[(ell == 2) & (m == 2) & (sigmaR > 2.0 * c1f * xp.tanh(c2f))] = sigmaR / (2.0 * xp.tanh(c2f))
+    d1f = EOBCalculateRDPhaseCoefficient1(ell, m, eta, chi, xp=xp)
+    d2f = EOBCalculateRDPhaseCoefficient2(ell, m, eta, chi, xp=xp)
+
+    # Step 4 - compute the constrainted coefficients
+    c1c = EOBCalculateRDAmplitudeConstraintedCoefficient1(
+        c1f, c2f, sigmaR, nra, nraDot, eta[:, None], xp=xp
+    )
+    c2c = EOBCalculateRDAmplitudeConstraintedCoefficient2(
+        c1f, c2f, sigmaR, nra, nraDot, eta[:, None], xp=xp
+    )
+
+    d1c = EOBCalculateRDPhaseConstraintedCoefficient1(d1f, d2f, sigmaI, nromega)
+
+    """if debug:
+        print(f"sigmaR:{sigmaR}, sigmaI: {sigmaI}")
+        print("Free coeffs")
+        print(c1f, c2f, d1f, d2f)
+        print("Constrained coeffs")
+        print(c1c, c2c, d1c)"""
+    # Step 5 - assemble the amplitude and phase
+    # First the ansatze part
+    Alm = c1c[:, :, None] * xp.tanh(c1f[:, :, None] * (t[:, None, :] - t_match[:, None, None]) + c2f[:, :, None]) + c2c[:, :, None]
+    philm = phi_match[:, :, None] - d1c[:, :, None] * xp.log(
+        (1 + d2f[:, :, None] * xp.exp(-d1f[:, :, None] * (t[:, None, :] - t_match[:, None, None]))) / (1 + d2f[:, :, None])
+    )
+
+    test_omega = -xp.real(omega_complex) + 1j * xp.imag(omega_complex)
+    # hlm = eta*Alm*xp.exp(1j*philm)*xp.exp(1j*omega_complex*(t-t_match))
+    hlm = eta[:, None, None] * Alm * xp.exp(1j * philm) * xp.exp(1j * test_omega[:, :, None] * (t[:, None, :] - t_match[:, None, None]))
+    return hlm, philm
 
 
 class SEOBNRv4PHM:
@@ -1179,7 +2026,6 @@ class SEOBNRv4PHM:
             condBound.copy(), argsData
         )
 
-        """
         # steps are axis 0
         last_ind = self.xp.where(self.xp.diff(t[1:].astype(bool).astype(int), axis=0) == -1)
 
@@ -1207,7 +2053,7 @@ class SEOBNRv4PHM:
             fix_step=True,
         )
         # TODO: check integrator difference if needed
-        """
+
         num_steps = num_steps.astype(np.int32)
 
         num_steps_max = num_steps.max().item()
@@ -1376,6 +2222,7 @@ class SEOBNRv4PHM:
         t_in = (self.t / (M[:, None] * MTSUN_SI))
 
         phi_orb = dynamics[:, 1]
+
         phi_spline = CubicSplineInterpolantTD(
             t_in.T.flatten().copy(),
             phi_orb.T.flatten().copy(),
@@ -1407,13 +2254,10 @@ class SEOBNRv4PHM:
         t_omega_peak = t_new[(self.xp.arange(self.num_bin_all), idx_omega_peak)]
 
         tmp = hlm_interp * self.xp.exp(1j * mms[None, :, None] * phi_orb[:, None, :])
-        hlms_real = self.xp.concatenate(
-            [
-                hlm_interp.real,
-                hlm_interp.imag,
-            ],
-            axis=1,
-        )
+
+        hlms_real = self.xp.zeros((self.num_bin_all, 2 * self.num_modes, hlm_interp.shape[-1]))
+        hlms_real[:, 0::2, :] = tmp.real
+        hlms_real[:, 1::2, :] = tmp.imag
 
         splines = CubicSplineInterpolantTD(
             t_in.T.flatten().copy(),
@@ -1427,7 +2271,10 @@ class SEOBNRv4PHM:
 
         result = splines(t_new)
 
+
+        
         modes = result[:, 0::2, :] + 1j * result[:, 1::2, :]
+
         modes *= self.xp.exp(-1j * mms[None, :, None] * phi_orb_interp[:, None, :])
 
         if nrDeltaT is None:
@@ -1442,15 +2289,201 @@ class SEOBNRv4PHM:
         amp = self.xp.abs(modes)
         phase = self.xp.unwrap(self.xp.angle(modes))
 
-        if (
-            m % 2
-            and np.abs(m_1 - m_2) < 1e-4
-            and np.abs(chi_1) < 1e-4
-            and np.abs(chi_2) < 1e-4
-        ) or (m % 2 and np.abs(m_1 - m_2) < 1e-4 and np.abs(chi_1 - chi_2) < 1e-4):
-            continue
+        # TODO: add fix bad modes from 
+        inds_fix = ((self.xp.abs(m_1 - m_2) < 1e-4) & (self.xp.abs(chi_1) < 1e-4) & (np.abs(chi_2)< 1e-4)) | ((self.xp.abs(m_1 - m_2) < 1e-4) & (self.xp.abs(chi_1 - chi_2) < 1e-4))
 
+        if self.xp.any(inds_fix):
+            raise NotImplementedError
+        
+        # TODO setup inds fix
+        #inds_run = ~((inds_fix[None, :] & (mms[:, None] % 2).astype(bool)).T)
+
+        # - extra in orig script
+        nrDeltaT_in = nrDeltaT[:, None] + self.xp.full((nrDeltaT.shape[0], ells.shape[0]), 10.0) * ((ells[None, :] == 5) & (mms[None, :] == 5))
+
+        if True:  # self.xp.any(~inds_fix):
+            # Compute the NQC coeffs
+            t_peak = t_omega_peak
+            NQC_coeffs = EOBCalculateNQCCoefficientsV4_freeattach(
+                amp,
+                phase,
+                r_new,
+                pr_new,
+                omega_orb_mine,
+                ells,
+                mms,
+                t_peak,
+                t_new,
+                m_1,
+                m_2,
+                chi_1,
+                chi_2,
+                nrDeltaT_in,
+                xp=self.xp
+            )
+
+            NQC_coeffs["a3S"] = np.zeros_like(NQC_coeffs["a1"])
+            NQC_coeffs["a4"] = np.zeros_like(NQC_coeffs["a1"])
+            NQC_coeffs["a5"] = np.zeros_like(NQC_coeffs["a1"])
+            NQC_coeffs["b3"] = np.zeros_like(NQC_coeffs["a1"])
+            NQC_coeffs["b4"] = np.zeros_like(NQC_coeffs["a1"])
+
+            NQC_coeffs = {key: value[:, :, None] for key, value in NQC_coeffs.items()}
+
+            breakpoint()
+            # Evaluate the correction
+            NQC_correction = EOBNonQCCorrection(r_new[:, None, :], None, pr_new[:, None, :], None, omega_orb_mine[:, None, :], NQC_coeffs, xp=self.xp)
+       
+            # Modify the modes
+            modes *= NQC_correction
+
+            hIMR = {}
+
+            amp22 = self.xp.abs(hlm_interp[:, 0])
+            t_max = t_new[(self.xp.arange(self.num_bin_all), self.xp.argmax(amp22, axis=-1))]
+
+            idx = self.xp.argmin(self.xp.abs(t_new - t_attach[:, None]), axis=-1)
+            t_new = t_new - t_max[:, None]
+
+            dt = t_new[:, 1] - t_new[:, 0]
+            N = (20 / dt).astype(int) + 1
+            t_match = t_new[(self.xp.arange(self.num_bin_all), idx)]
+            # FIXME: the ringdown duration should be computed from QNM damping time
+
+            final_mass = compute_final_mass_SEOBNRv4(m_1.get(), m_2.get(), chi_1.get(), chi_2.get())
+            
+            final_spin = bbh_final_spin_non_precessing_HBR2016(
+                m_1.get(), m_2.get(), chi_1.get(), chi_2.get(), version="M3J4"
+            )
+
+            omega_complex = compute_QNM(2, 2, 0, final_spin, final_mass).conjugate()
+            damping_time = 1 / np.imag(omega_complex)
+            ringdown_time = (30 * damping_time).astype(int)
+
+            t_match_all = self.xp.tile(t_match, (self.num_modes, 1)).T
+
+            t_match_all -= 10.0 * ((ells[None, :] == 5) & (mms[None, :] == 5))
+
+            num_t_fit = (t_new.shape[1] - (idx - N)).astype(xp.int32)
+            num_t_fit_max = num_t_fit.max().item()
+
+            t_fit_inds = xp.tile((idx - N)[:, None], num_t_fit_max)[:, None, :] + xp.tile(xp.arange(num_t_fit_max), (amp.shape[:-1] + (1,)))
+                
+            t_fit_inds[t_fit_inds > amp.shape[-1]] = -1
+            t_fit = xp.take_along_axis(t_new[:, None, :], t_fit_inds, axis=-1)
+            amplitude_fit = xp.take_along_axis(amp, t_fit_inds, axis=-1)
+            phase_fit = xp.take_along_axis(phase, t_fit_inds, axis=-1)
+            
+            num_t_fit = self.xp.tile(num_t_fit, (self.num_modes,))
+            intrp_amp = CubicSplineInterpolantTD(
+                t_fit.T.flatten().copy(),
+                amplitude_fit.transpose(
+                    2, 1, 0).flatten().copy(),
+                num_t_fit, # lengths
+                1,
+                self.num_bin_all* self.num_modes,
+                use_gpu=self.use_gpu,
+            )
+            intrp_phase = CubicSplineInterpolantTD(
+                t_fit.T.flatten().copy(),
+                phase_fit.transpose(
+                    2, 1, 0).flatten().copy(),
+                num_t_fit, # lengths
+                1,
+                self.num_bin_all* self.num_modes,
+                use_gpu=self.use_gpu,
+            )
+
+            amp_max = intrp_amp(t_match_all.T.flatten()[:, None]).reshape(self.num_modes, self.num_bin_all).T
+            damp_max = intrp_amp(t_match_all.T.flatten()[:, None], deriv_order=1).reshape(self.num_modes, self.num_bin_all).T
+            phi_match = intrp_phase(t_match_all.T.flatten()[:, None]).reshape(self.num_modes, self.num_bin_all).T
+            omega_max = intrp_phase(t_match_all.T.flatten()[:, None], deriv_order=1).reshape(self.num_modes, self.num_bin_all).T
+            attach_params = dict(
+                amp=amp_max,
+                damp=damp_max,
+                omega=omega_max,
+                final_mass=self.xp.asarray(final_mass),
+                final_spin=self.xp.asarray(final_spin),
+            )
+
+            t_ringdown = t_match[:, None] + self.xp.arange(ringdown_time.max())[None, :] * dt[:, None]
+
+            hring, philm = compute_MR_mode_free(
+                    t_ringdown,
+                    m_1,
+                    m_2,
+                    chi_1,
+                    chi_2,
+                    attach_params,
+                    ells,
+                    mms,
+                    t_match=t_match,
+                    phi_match=phi_match,
+                    debug=False,
+                    xp=self.xp
+                )
+            
+            max_idx = idx.max().item()
+            num_to_add = (hring.shape[-1] - (modes.shape[-1] - idx)).max().item()
+            modes = self.xp.concatenate([modes, self.xp.zeros(modes.shape[:-1] + (num_to_add,))], axis=-1)
+            
+            ring_add_inds = (idx + 1)[:, None, None] + self.xp.tile(self.xp.arange(hring.shape[-1] - 1), hring.shape[:-1] + (1,))
+
+            ring_add_inds = ring_add_inds.flatten()
+            inds_bins = self.xp.tile(self.xp.arange(self.num_bin_all), (self.num_modes, hring.shape[-1] - 1, 1)).transpose(2, 0, 1).flatten()
+
+            inds_modes = self.xp.tile(self.xp.arange(self.num_modes), (self.num_bin_all, hring.shape[-1] - 1, 1)).transpose(0, 2, 1).flatten()
+            
+            breakpoint()
+            modes[(inds_bins, inds_modes, ring_add_inds)] = hring[:, :, 1:].flatten()
+        
+            breakpoint()
+            #(2, 3), 'constant', constant_values=(4, 6)
+            """
+            # adjust this to cut off ends of shorter signals
+            
+            for ell_m, mode in hlms.items():
+
+                #if ell_m == (5, 5):
+                
+                
+                    # print(t_match)
+                ell, m = ell_m
+                
+                amp_fit = self.xp.take_along_axis(self.xp.abs(mode[idx - N :])
+                phase = self.xp.unwrap(self.xp.angle(mode))
+                intrp_amp = CubicSpline(t[idx - N :], amp)
+                intrp_phase = CubicSpline(t[idx - N :], phase[idx - N :])
+                amp_max = intrp_amp(t_match)
+                damp_max = intrp_amp.derivative()(t_match)
+                phi_match = intrp_phase(t_match)
+                omega_max = intrp_phase.derivative()(t_match)
+                attach_params = dict(
+                    amp=amp_max,
+                    damp=damp_max,
+                    omega=omega_max,
+                    final_mass=final_mass,
+                    final_spin=final_spin,
+                )
+                hring, philm = compute_MR_mode_free(
+                    t_ringdown,
+                    m1,
+                    m2,
+                    chi1,
+                    chi2,
+                    attach_params,
+                    ell,
+                    m,
+                    t_match=t_match,
+                    phi_match=phi_match,
+                    debug=False,
+                )
+                # Construct the full IMR waveform
+                hIMR[(ell, m)] = self.xp.concatenate((hlms[(ell, m)][: idx + 1], hring[1:]))
+                t_match = t[idx]
+                t_IMR = self.xp.concatenate((t[: idx + 1], t_ringdown[1:]))"""
         breakpoint()
+
         """et = tttttt.perf_counter()
 
         print("splines", self.num_bin_all, (et - st) /
@@ -1530,7 +2563,7 @@ class SEOBNRv4PHM:
 
         distance = self.xp.asarray(distance)
         hlms = self.get_hlms(traj, m1, m2, chi1z, chi2z,
-                             num_steps, ells, mms) / distance[:, None, None]
+                             num_steps, ells, mms)  #  / distance[:, None, None]
 
         phi = traj[:, 1]
 

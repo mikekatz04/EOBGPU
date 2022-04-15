@@ -729,6 +729,7 @@ class DOPR853:
             read_out_index_update = self.xp.tile(index_update, nODE)
             read_out_ode_dim = self.xp.repeat(self.xp.arange(nODE), len(index_update))
             
+            
             # 0.007710501374676823 (0.00022)
             if self.use_gpu and self.read_out_to_cpu:
                 denseOutput[(read_out_step.get(), read_out_ode_dim.get(), read_out_index_update.get())] = solOld[:, index_update].flatten().get()

@@ -6,7 +6,7 @@ from eob.seobnrv4phm import BBHWaveformTD, SEOBNRv4PHM
 from bbhx.utils.constants import PC_SI
 import numpy as np
 from cupy.cuda.runtime import setDevice
-setDevice(1)
+setDevice(4)
 
 
 mt = 60.0  # Total mass in solar masses
