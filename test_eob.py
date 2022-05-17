@@ -11,7 +11,7 @@ setDevice(4)
 
 mt = 60.0  # Total mass in solar masses
 q = 2.5
-num = int(1e2)
+num = int(30)
 # was 16.82307190336287 0.001682307190336287
 m1 = np.full(num, 0.55 * mt)  # mt * q / (1.+q))
 m2 = np.full(num, 0.45 * mt)  # mt / (1.+q))
@@ -51,23 +51,23 @@ for inter in bilby_interferometers:
     #    sampling_frequency, Tobs, start_time=0)
 
 bbh = BBHWaveformTD(bilby_interferometers, use_gpu=True)
-n = 0
+n = 5
 out = bbh(
-    m1[:3],
-    m2[:3],
+    m1,
+    m2,
     # chi1x,
     # chi1y,
-    chi1z[:3],
+    chi1z,
     # chi2x,
     # chi2y,
-    chi2z[:3],
-    distance[:3],
-    phiRef[:3],
-    inc[:3],
-    ra[:3],
-    dec[:3],
-    psi[:3],
-    geocent_time[:3],
+    chi2z,
+    distance,
+    phiRef,
+    inc,
+    ra,
+    dec,
+    psi,
+    geocent_time,
     sampling_frequency=sampling_frequency,
     Tobs=Tobs,
     #modes=[(2, 2)],
@@ -76,17 +76,13 @@ out = bbh(
     return_type="geocenter_td"  # "detector_fd"
 )
 
-breakpoint()
+#for i, inter in enumerate(bilby_interferometers):
+#    inter.set_strain_data_from_frequency_domain_strain(
+#        out[0, i].get(), sampling_frequency=sampling_frequency, duration=Tobs)
 
-for i, inter in enumerate(bilby_interferometers):
-    inter.set_strain_data_from_frequency_domain_strain(
-        out[0, i].get(), sampling_frequency=sampling_frequency, duration=Tobs)
-
-breakpoint()
 del bbh
 bbh = BBHWaveformTD(bilby_interferometers, use_gpu=True)
 
-breakpoint()
 st = time.perf_counter()
 for jj in range(n):
     """
@@ -123,9 +119,10 @@ for jj in range(n):
         geocent_time,
         sampling_frequency=sampling_frequency,
         Tobs=Tobs,
-        modes=None,
+        #modes=[(2, 2)],
         bufferSize=None,
         fill=False,
+        return_type="geocenter_td"  # "detector_fd"
     )
 
     print(jj)

@@ -669,7 +669,7 @@ class BBHWaveformTD:
         num = 1
         st = tttttt.perf_counter()
         for _ in range(num):"""
-        self.amp_phase_gen(
+        return self.amp_phase_gen(
             m1,
             m2,
             # chi1x,
@@ -932,6 +932,7 @@ def EOBGetNRSpinPeakAmplitudeV4(ell, m, m1, m2, chiS, chiA):
             )
             A2 = -3.984063745019967 * A1 + 16.00025600409607 * fEQ - 16.0002560041612 * fTPL
             # Final formula
+            # TODO: supposed to be eta here?
             res = eta * (A0 + A1 * eta + A2 * eta2)
         
         elif m == 1:
@@ -1310,7 +1311,7 @@ def EOBGetNRSpinPeakOmegaDotV4(ell, m, eta, a):
             e0 = 0.01574321112717377
             e1 = 0.02244178140869133
             A1 = e0 + e1 * chi
-            # res = eta * CombineTPLEQMFits(eta, A1, fEQ, fTPL)
+            # res = CombineTPLEQMFits(eta, A1, fEQ, fTPL)
 
             # filled in here for vectorize capability
             eta2 = eta * eta
@@ -1322,7 +1323,7 @@ def EOBGetNRSpinPeakOmegaDotV4(ell, m, eta, a):
             )
             A2 = -3.984063745019967 * A1 + 16.00025600409607 * fEQ - 16.0002560041612 * fTPL
             # Final formula
-            res = eta * (A0 + A1 * eta + A2 * eta2)
+            res = (A0 + A1 * eta + A2 * eta2)
 
         elif m == 1:
             res = (
@@ -1416,9 +1417,6 @@ def EOBCalculateNQCCoefficientsV4_freeattach(
     chiA = (chi1 - chi2) / 2
     chiS = (chi1 + chi2) / 2
 
-    print("check")
-    nrDeltaT[:, :-1] = 1.0
-    nrDeltaT[:, -1] = 1.0 + 10.0
     # num bin x num modes
     nrTimePeak = time_peak[:, None] - nrDeltaT
     #print(f"nrTimePeak={nrTimePeak}")
@@ -1611,6 +1609,7 @@ def EOBCalculateNQCCoefficientsV4_freeattach(
 
     omegas = xp.array([nromega - omega, nromegaDot - omegaDot]).transpose((1, 2, 0))
     # Solve the equation Q*coeffs = amps
+
     res = xp.linalg.solve(P, omegas)
     coeffs["b1"] = res[:, :, 0].copy()
     coeffs["b2"] = res[:, :, 1].copy()
@@ -2214,12 +2213,33 @@ class SEOBNRv4PHM:
                 sampling_frequency=1024.0,
                 nrDeltaT=None,
             ):
+        
+        """
+        # mismatch with my trajectory is ~1e-5
+        # mismatch with group trajectory is ~3.5e-6
+        tmp  = self.xp.asarray(np.load("dynamics.npy")).copy()
+        hlmtmp = np.load("hlms.npz", allow_pickle=True)
+        hlmtmp = {key: self.xp.asarray(val) for key, val in hlmtmp["arr_0"][()].items()} 
+
+        hlmtmp_sparse = np.load("hlm_sparse.npz", allow_pickle=True)
+        hlmtmp_sparse = {key: self.xp.asarray(val) for key, val in hlmtmp_sparse["arr_0"][()].items()} 
+        t_interp = self.xp.tile(tmp[:, 0].copy(), (self.num_bin_all, 1))
+
+        dynamics = self.xp.tile(tmp[:, 1:].copy().T, (self.num_bin_all, 1, 1))
+        tmptmp = self.xp.asarray([hlmtmp[(ell.item(), mm.item())] for ell, mm in zip(ells, mms)])
+        modestmp = self.xp.tile(tmptmp, (self.num_bin_all, 1, 1))
+
+        tmptmp_sparse = self.xp.asarray([hlmtmp_sparse[(ell.item(), mm.item())] for ell, mm in zip(ells, mms)])
+        hlm_interp = self.xp.tile(tmptmp_sparse, (self.num_bin_all, 1, 1))
+        self.lengths[:] = 286
+        """
 
         dt = 1 / sampling_frequency
 
         delta_T = dt / (M * MTSUN_SI)
         
-        t_in = (self.t / (M[:, None] * MTSUN_SI))
+        t_in = (self.t / (M[:, None] * MTSUN_SI))  
+        # t_in = t_interp.copy()
 
         phi_orb = dynamics[:, 1]
 
@@ -2247,11 +2267,13 @@ class SEOBNRv4PHM:
 
         inds_bad = t_new > t_in.max(axis=1)[:, None]
         t_new[inds_bad] = self.xp.tile(t_in.max(axis=1)[:, None], (1, max_num_pts))[inds_bad]
+        omega_orb_mine_sparse = phi_spline(t_in, deriv_order=1)
+        # TODO: check this determination of the peak?
         omega_orb_mine = phi_spline(t_new, deriv_order=1)
         phi_orb_interp = phi_spline(t_new, deriv_order=0)
 
-        idx_omega_peak = self.xp.argmax(omega_orb_mine, axis=1)
-        t_omega_peak = t_new[(self.xp.arange(self.num_bin_all), idx_omega_peak)]
+        idx_omega_peak = self.xp.argmax(omega_orb_mine_sparse, axis=1)
+        t_omega_peak = t_in[(self.xp.arange(self.num_bin_all), idx_omega_peak)]
 
         tmp = hlm_interp * self.xp.exp(1j * mms[None, :, None] * phi_orb[:, None, :])
 
@@ -2271,11 +2293,11 @@ class SEOBNRv4PHM:
 
         result = splines(t_new)
 
-
-        
         modes = result[:, 0::2, :] + 1j * result[:, 1::2, :]
 
         modes *= self.xp.exp(-1j * mms[None, :, None] * phi_orb_interp[:, None, :])
+
+        #modes = modestmp.copy()
 
         if nrDeltaT is None:
             nrDeltaT = EOBGetNRSpinPeakDeltaTv4(2, 2, m_1, m_2, chi_1, chi_2)
@@ -2330,19 +2352,23 @@ class SEOBNRv4PHM:
 
             NQC_coeffs = {key: value[:, :, None] for key, value in NQC_coeffs.items()}
 
-            breakpoint()
+            
             # Evaluate the correction
             NQC_correction = EOBNonQCCorrection(r_new[:, None, :], None, pr_new[:, None, :], None, omega_orb_mine[:, None, :], NQC_coeffs, xp=self.xp)
        
             # Modify the modes
             modes *= NQC_correction
+            # update these
+            amp = self.xp.abs(modes)
+            phase = self.xp.unwrap(self.xp.angle(modes))
 
             hIMR = {}
 
-            amp22 = self.xp.abs(hlm_interp[:, 0])
+            amp22 = self.xp.abs(modes[:, 0])
             t_max = t_new[(self.xp.arange(self.num_bin_all), self.xp.argmax(amp22, axis=-1))]
 
             idx = self.xp.argmin(self.xp.abs(t_new - t_attach[:, None]), axis=-1)
+
             t_new = t_new - t_max[:, None]
 
             dt = t_new[:, 1] - t_new[:, 0]
@@ -2373,7 +2399,7 @@ class SEOBNRv4PHM:
             t_fit = xp.take_along_axis(t_new[:, None, :], t_fit_inds, axis=-1)
             amplitude_fit = xp.take_along_axis(amp, t_fit_inds, axis=-1)
             phase_fit = xp.take_along_axis(phase, t_fit_inds, axis=-1)
-            
+
             num_t_fit = self.xp.tile(num_t_fit, (self.num_modes,))
             intrp_amp = CubicSplineInterpolantTD(
                 t_fit.T.flatten().copy(),
@@ -2406,7 +2432,12 @@ class SEOBNRv4PHM:
                 final_spin=self.xp.asarray(final_spin),
             )
 
-            t_ringdown = t_match[:, None] + self.xp.arange(ringdown_time.max())[None, :] * dt[:, None]
+            try:
+                tmp_dt = dt.get()
+            except AttributeError:
+                tmp_dt = dt
+            num_add = int((ringdown_time / tmp_dt).max()) + 1
+            t_ringdown = t_match[:, None] + self.xp.arange(num_add)[None, :] * dt[:, None]
 
             hring, philm = compute_MR_mode_free(
                     t_ringdown,
@@ -2434,16 +2465,14 @@ class SEOBNRv4PHM:
 
             inds_modes = self.xp.tile(self.xp.arange(self.num_modes), (self.num_bin_all, hring.shape[-1] - 1, 1)).transpose(0, 2, 1).flatten()
             
-            breakpoint()
+
             modes[(inds_bins, inds_modes, ring_add_inds)] = hring[:, :, 1:].flatten()
-        
-            breakpoint()
             #(2, 3), 'constant', constant_values=(4, 6)
             """
             # adjust this to cut off ends of shorter signals
             
             for ell_m, mode in hlms.items():
-
+p
                 #if ell_m == (5, 5):
                 
                 
@@ -2482,7 +2511,6 @@ class SEOBNRv4PHM:
                 hIMR[(ell, m)] = self.xp.concatenate((hlms[(ell, m)][: idx + 1], hring[1:]))
                 t_match = t[idx]
                 t_IMR = self.xp.concatenate((t[: idx + 1], t_ringdown[1:]))"""
-        breakpoint()
 
         """et = tttttt.perf_counter()
 
@@ -2490,7 +2518,7 @@ class SEOBNRv4PHM:
               num, (et - st) / num / self.num_bin_all)
 
         st = tttttt.perf_counter()
-        for _ in range(num):"""
+        for _ in range(num):
         # TODO: try single block reduction for likelihood (will probably be worse for smaller batch, but maybe better for larger batch)?
         template_channels = self.interp_response(
             self.dataTime,
@@ -2503,6 +2531,8 @@ class SEOBNRv4PHM:
             self.num_bin_all,
             dt=1 / sampling_frequency,
         )
+        """
+        return modes
 
     def __call__(
         self,
@@ -2577,7 +2607,8 @@ class SEOBNRv4PHM:
             ],
             axis=1,
         )
-        self.compute_full_waveform(
+
+        modes = self.compute_full_waveform(
             traj,
             hlms,
             self.t,
@@ -2595,6 +2626,8 @@ class SEOBNRv4PHM:
         self.mms = mms
 
         self.eob_c_class.deallocate_information()
+
+        return modes
         
 
 

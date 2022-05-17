@@ -1010,8 +1010,8 @@ cmplx EOBFluxCalculateNewtonianMultipole(double x, double phi, int l, int m, cmp
 
     cmplx multipole = param * pow(x, ((l + epsilon) / 2.0));
     multipole *= ylm;
-    if (phi == 0.0)
-        printf("%d %d %.12e %.12e %.12e %.12e %.12e %d\n", l, m, ylm.real(), ylm.imag(), param.real(), param.imag(), x, epsilon);
+    //if (phi == 0.0)
+    //    printf("%d %d %.12e %.12e %.12e %.12e %.12e %d\n", l, m, ylm.real(), ylm.imag(), param.real(), param.imag(), x, epsilon);
     return multipole;
 }
 
@@ -3194,15 +3194,15 @@ void compute_hlms(cmplx *hlms, double *r_arr, double *phi_arr, double *pr_arr, d
         
             args[2 * BLOCK + i] = pr; // full second
             grad_Ham_align_AD_single(args, grad, additionalArgs, BLOCK, i);
-            if ((blockIdx.x == 0) && (threadIdx.x == 0))
-            {
-                printf("INIT4: %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n", args[0 * BLOCK + i], args[1 * BLOCK + i], args[2 * BLOCK + i], args[3 * BLOCK + i], grad[0 * BLOCK + i], grad[1 * BLOCK + i], grad[2 * BLOCK + i], grad[3 * BLOCK + i]);
-                for (int jjj = 0; jjj < 9; jjj += 1)
-                {
-                    printf("INIT5: %d %.12e\n", jjj, additionalArgs[jjj * BLOCK + i]);
-                }
+            //if ((blockIdx.x == 0) && (threadIdx.x == 0))
+            //{
+             //   printf("INIT4: %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n", args[0 * BLOCK + i], args[1 * BLOCK + i], args[2 * BLOCK + i], args[3 * BLOCK + i], grad[0 * BLOCK + i], grad[1 * BLOCK + i], grad[2 * BLOCK + i], grad[3 * BLOCK + i]);
+             //   for (int jjj = 0; jjj < 9; jjj += 1)
+               // {
+                 //   printf("INIT5: %d %.12e\n", jjj, additionalArgs[jjj * BLOCK + i]);
+               // }
                             
-            }
+            //}
             omega_circ = grad_circ[3 * BLOCK + i];
             omega = grad[3 * BLOCK + i];
             vPhi = 1./(pow(omega_circ, 2) * pow(r, 3));

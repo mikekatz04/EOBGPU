@@ -7,7 +7,7 @@ try:
     from .pydopr853 import controllerSuccess as controllerSuccess_gpu
     gpu_available = True
     from cupy.cuda.runtime import setDevice
-    setDevice(2)
+    setDevice(4)
 
 except ModuleNotFoundError:
     import numpy as xp
@@ -753,7 +753,7 @@ class DOPR853:
                 loopFlag = False
 
             jj += 1
-            print("CHECKING", jj)
+            #print("CHECKING", jj)
             #if jj >= 281:
             #    break
             #if ii % 1 == 0:
