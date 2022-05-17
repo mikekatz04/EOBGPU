@@ -3064,10 +3064,10 @@ void ODE_Ham_align_AD(double *x, double *argsIn, double *k, double *additionalAr
         //if (i == 0)
           //  printf("%.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e \n", x_here, Fr, Fphi, dHdpr, dHdpphi, dHdr, dHdphi, omega, r, phi, pr, pphi);
 
-        int ode1_out = 0 * numSys + i;
-        int ode2_out = 1 * numSys + i;
-        int ode3_out = 2 * numSys + i;
-        int ode4_out = 3 * numSys + i;
+        int ode1_out = 0 * numSys + bin_i;
+        int ode2_out = 1 * numSys + bin_i;
+        int ode3_out = 2 * numSys + bin_i;
+        int ode4_out = 3 * numSys + bin_i;
 
         k[ode1_out] = dHdpr;
         k[ode2_out] = dHdpphi;

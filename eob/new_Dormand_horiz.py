@@ -265,10 +265,6 @@ class DOPR853:
         arg = solOld.copy()
         xCurrent = x.copy()
 
-
-
-        breakpoint()
-
         self.ode(xCurrent, arg, k1, additionalArgs)
 
         # Step 2
@@ -488,7 +484,6 @@ class DOPR853:
         # Check if the previous step was rejected
         CUDA_SHARED bool previousReject[BLOCK]
         """
-
         if denseOutput is not None or denseOutput is not None or denseOutput is not None:
             if denseOutput is None:
                 raise ValueError("If providing denseOutputLoc/denseOutput/step_num, must provide all.")

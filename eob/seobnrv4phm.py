@@ -144,6 +144,14 @@ class StoppingCriterion:
                 step_num), np.arange(len(step_num)))] < 3.0"""
         return stop
 
+def searchsorted2d_vec(a,b, xp=None, **kwargs):
+    if xp is None:
+        xp = np
+    m,n = a.shape
+    max_num = xp.maximum(a.max() - a.min(), b.max() - b.min()) + 1
+    r = max_num*xp.arange(a.shape[0])[:,None]
+    p = xp.searchsorted( (a+r).ravel(), (b+r).ravel(), **kwargs).reshape(m,-1)
+    return p - n*(xp.arange(m)[:,None])
 
 class CubicSplineInterpolantTD:
     """GPU-accelerated Multiple Cubic Splines
@@ -195,9 +203,15 @@ class CubicSplineInterpolantTD:
         # TODO: need to fix last point
         self.x = x
 
-    @property
-    def t_shaped(self):
-        return self.x.reshape(self.max_length, self.num_bin_all).T
+        self.t_shaped = self.x.reshape(self.max_length, self.num_bin_all).T
+        max_t_vals = self.t_shaped.max(axis=1)
+        inds_for_fix = self.xp.tile(self.xp.arange(self.max_length), (self.num_bin_all,1))
+        inds_fix = np.where(inds_for_fix >= self.lengths[:, None])
+        if len(inds_fix[0]) > 0:
+            # need to fix this for the search sorted algorithm
+            # fixes different length time arrays
+            self.t_shaped[inds_fix] = max_t_vals[inds_fix[0]] * 2.0
+
 
     @property
     def y_shaped(self):
@@ -224,13 +238,20 @@ class CubicSplineInterpolantTD:
 
         inds = self.xp.zeros((self.num_bin_all, tnew.shape[1]), dtype=int)
 
+        """import time
+        st = time.perf_counter()"""
         # Optional TODO: remove loop ? if speed needed
+        inds = searchsorted2d_vec(self.t_shaped, tnew, side="right", xp=self.xp) - 1
+        inds[inds == self.lengths[:, None]] -= 1
+        """et = time.perf_counter()
+        print((et - st))
+        breakpoint()
         for i, (t, tnew_i, length_i) in enumerate(zip(self.t_shaped, tnew, self.lengths)):
             inds[i] = self.xp.searchsorted(t[:length_i], tnew_i, side="right") - 1
 
             # fix end value
             inds[i][tnew_i == t[length_i - 1]] = length_i - 2
-
+        """
         # get values outside the edges
         test_ts_end_inds = (self.xp.arange(self.num_bin_all), self.lengths - 1) 
 
@@ -2262,7 +2283,7 @@ class SEOBNRv4PHM:
         )
         num_pts_new = ((t_in[:, -1] - t_in[:, 0]) / delta_T).astype(int) + 1
         max_num_pts = num_pts_new.max().item()
- 
+
         t_new = self.xp.tile(self.xp.arange(max_num_pts), (dynamics.shape[0], 1)) * delta_T[:, None] + t_in[:, 0][:, None]
 
         inds_bad = t_new > t_in.max(axis=1)[:, None]
@@ -2351,166 +2372,172 @@ class SEOBNRv4PHM:
             NQC_coeffs["b4"] = np.zeros_like(NQC_coeffs["a1"])
 
             NQC_coeffs = {key: value[:, :, None] for key, value in NQC_coeffs.items()}
+        
+        # 13 ms (part below is 1ms)
+        # Evaluate the correction
+        NQC_correction = EOBNonQCCorrection(r_new[:, None, :], None, pr_new[:, None, :], None, omega_orb_mine[:, None, :], NQC_coeffs, xp=self.xp)
 
+        # Modify the modes
+        modes *= NQC_correction
+        # update these
+        amp = self.xp.abs(modes)
+        phase = self.xp.unwrap(self.xp.angle(modes))
+
+        # ~12 ms (this part below is 1ms)
+        hIMR = {}
+
+        amp22 = self.xp.abs(modes[:, 0])
+        t_max = t_new[(self.xp.arange(self.num_bin_all), self.xp.argmax(amp22, axis=-1))]
+
+        idx = self.xp.argmin(self.xp.abs(t_new - t_attach[:, None]), axis=-1)
+
+        t_new = t_new - t_max[:, None]
+
+        dt = t_new[:, 1] - t_new[:, 0]
+        N = (20 / dt).astype(int) + 1
+        t_match = t_new[(self.xp.arange(self.num_bin_all), idx)]
+        # FIXME: the ringdown duration should be computed from QNM damping time
+
+        final_mass = compute_final_mass_SEOBNRv4(m_1.get(), m_2.get(), chi_1.get(), chi_2.get())
+        
+        final_spin = bbh_final_spin_non_precessing_HBR2016(
+            m_1.get(), m_2.get(), chi_1.get(), chi_2.get(), version="M3J4"
+        )
+
+        omega_complex = compute_QNM(2, 2, 0, final_spin, final_mass).conjugate()
+        damping_time = 1 / np.imag(omega_complex)
+        ringdown_time = (30 * damping_time).astype(int)
+
+        t_match_all = self.xp.tile(t_match, (self.num_modes, 1)).T
+
+        t_match_all -= 10.0 * ((ells[None, :] == 5) & (mms[None, :] == 5))
+
+        num_t_fit = (t_new.shape[1] - (idx - N)).astype(xp.int32)
+        num_t_fit_max = num_t_fit.max().item()
+
+        t_fit_inds = xp.tile((idx - N)[:, None], num_t_fit_max)[:, None, :] + xp.tile(xp.arange(num_t_fit_max), (amp.shape[:-1] + (1,)))
             
-            # Evaluate the correction
-            NQC_correction = EOBNonQCCorrection(r_new[:, None, :], None, pr_new[:, None, :], None, omega_orb_mine[:, None, :], NQC_coeffs, xp=self.xp)
-       
-            # Modify the modes
-            modes *= NQC_correction
-            # update these
-            amp = self.xp.abs(modes)
-            phase = self.xp.unwrap(self.xp.angle(modes))
+        t_fit_inds[t_fit_inds > amp.shape[-1]] = -1
+        t_fit = xp.take_along_axis(t_new[:, None, :], t_fit_inds, axis=-1)
+        amplitude_fit = xp.take_along_axis(amp, t_fit_inds, axis=-1)
+        phase_fit = xp.take_along_axis(phase, t_fit_inds, axis=-1)
 
-            hIMR = {}
+        num_t_fit = self.xp.tile(num_t_fit, (self.num_modes,))
+        intrp_amp = CubicSplineInterpolantTD(
+            t_fit.T.flatten().copy(),
+            amplitude_fit.transpose(
+                2, 1, 0).flatten().copy(),
+            num_t_fit, # lengths
+            1,
+            self.num_bin_all* self.num_modes,
+            use_gpu=self.use_gpu,
+        )
+        intrp_phase = CubicSplineInterpolantTD(
+            t_fit.T.flatten().copy(),
+            phase_fit.transpose(
+                2, 1, 0).flatten().copy(),
+            num_t_fit, # lengths
+            1,
+            self.num_bin_all* self.num_modes,
+            use_gpu=self.use_gpu,
+        )
 
-            amp22 = self.xp.abs(modes[:, 0])
-            t_max = t_new[(self.xp.arange(self.num_bin_all), self.xp.argmax(amp22, axis=-1))]
+        amp_max = intrp_amp(t_match_all.T.flatten()[:, None]).reshape(self.num_modes, self.num_bin_all).T
+        damp_max = intrp_amp(t_match_all.T.flatten()[:, None], deriv_order=1).reshape(self.num_modes, self.num_bin_all).T
+        phi_match = intrp_phase(t_match_all.T.flatten()[:, None]).reshape(self.num_modes, self.num_bin_all).T
+        omega_max = intrp_phase(t_match_all.T.flatten()[:, None], deriv_order=1).reshape(self.num_modes, self.num_bin_all).T
+        attach_params = dict(
+            amp=amp_max,
+            damp=damp_max,
+            omega=omega_max,
+            final_mass=self.xp.asarray(final_mass),
+            final_spin=self.xp.asarray(final_spin),
+        )
 
-            idx = self.xp.argmin(self.xp.abs(t_new - t_attach[:, None]), axis=-1)
+        try:
+            tmp_dt = dt.get()
+        except AttributeError:
+            tmp_dt = dt
+        num_add = int((ringdown_time / tmp_dt).max()) + 1
+        t_ringdown = t_match[:, None] + self.xp.arange(num_add)[None, :] * dt[:, None]
 
-            t_new = t_new - t_max[:, None]
+    
+        # 13 ms (this following part is 3)
+        hring, philm = compute_MR_mode_free(
+                t_ringdown,
+                m_1,
+                m_2,
+                chi_1,
+                chi_2,
+                attach_params,
+                ells,
+                mms,
+                t_match=t_match,
+                phi_match=phi_match,
+                debug=False,
+                xp=self.xp
+            )
+        
+        max_idx = idx.max().item()
+        num_to_add = (hring.shape[-1] - (modes.shape[-1] - idx)).max().item()
+        modes = self.xp.concatenate([modes, self.xp.zeros(modes.shape[:-1] + (num_to_add,))], axis=-1)
+        
+        ring_add_inds = (idx + 1)[:, None, None] + self.xp.tile(self.xp.arange(hring.shape[-1] - 1), hring.shape[:-1] + (1,))
 
-            dt = t_new[:, 1] - t_new[:, 0]
-            N = (20 / dt).astype(int) + 1
-            t_match = t_new[(self.xp.arange(self.num_bin_all), idx)]
-            # FIXME: the ringdown duration should be computed from QNM damping time
+        ring_add_inds = ring_add_inds.flatten()
+        inds_bins = self.xp.tile(self.xp.arange(self.num_bin_all), (self.num_modes, hring.shape[-1] - 1, 1)).transpose(2, 0, 1).flatten()
 
-            final_mass = compute_final_mass_SEOBNRv4(m_1.get(), m_2.get(), chi_1.get(), chi_2.get())
+        inds_modes = self.xp.tile(self.xp.arange(self.num_modes), (self.num_bin_all, hring.shape[-1] - 1, 1)).transpose(0, 2, 1).flatten()
+        
+
+        modes[(inds_bins, inds_modes, ring_add_inds)] = hring[:, :, 1:].flatten()
+    
+        # 16 ms
+        #(2, 3), 'constant', constant_values=(4, 6)
+
+        """
+        # adjust this to cut off ends of shorter signals
+        
+        for ell_m, mode in hlms.items():
+p
+            #if ell_m == (5, 5):
             
-            final_spin = bbh_final_spin_non_precessing_HBR2016(
-                m_1.get(), m_2.get(), chi_1.get(), chi_2.get(), version="M3J4"
-            )
-
-            omega_complex = compute_QNM(2, 2, 0, final_spin, final_mass).conjugate()
-            damping_time = 1 / np.imag(omega_complex)
-            ringdown_time = (30 * damping_time).astype(int)
-
-            t_match_all = self.xp.tile(t_match, (self.num_modes, 1)).T
-
-            t_match_all -= 10.0 * ((ells[None, :] == 5) & (mms[None, :] == 5))
-
-            num_t_fit = (t_new.shape[1] - (idx - N)).astype(xp.int32)
-            num_t_fit_max = num_t_fit.max().item()
-
-            t_fit_inds = xp.tile((idx - N)[:, None], num_t_fit_max)[:, None, :] + xp.tile(xp.arange(num_t_fit_max), (amp.shape[:-1] + (1,)))
-                
-            t_fit_inds[t_fit_inds > amp.shape[-1]] = -1
-            t_fit = xp.take_along_axis(t_new[:, None, :], t_fit_inds, axis=-1)
-            amplitude_fit = xp.take_along_axis(amp, t_fit_inds, axis=-1)
-            phase_fit = xp.take_along_axis(phase, t_fit_inds, axis=-1)
-
-            num_t_fit = self.xp.tile(num_t_fit, (self.num_modes,))
-            intrp_amp = CubicSplineInterpolantTD(
-                t_fit.T.flatten().copy(),
-                amplitude_fit.transpose(
-                    2, 1, 0).flatten().copy(),
-                num_t_fit, # lengths
-                1,
-                self.num_bin_all* self.num_modes,
-                use_gpu=self.use_gpu,
-            )
-            intrp_phase = CubicSplineInterpolantTD(
-                t_fit.T.flatten().copy(),
-                phase_fit.transpose(
-                    2, 1, 0).flatten().copy(),
-                num_t_fit, # lengths
-                1,
-                self.num_bin_all* self.num_modes,
-                use_gpu=self.use_gpu,
-            )
-
-            amp_max = intrp_amp(t_match_all.T.flatten()[:, None]).reshape(self.num_modes, self.num_bin_all).T
-            damp_max = intrp_amp(t_match_all.T.flatten()[:, None], deriv_order=1).reshape(self.num_modes, self.num_bin_all).T
-            phi_match = intrp_phase(t_match_all.T.flatten()[:, None]).reshape(self.num_modes, self.num_bin_all).T
-            omega_max = intrp_phase(t_match_all.T.flatten()[:, None], deriv_order=1).reshape(self.num_modes, self.num_bin_all).T
+            
+                # print(t_match)
+            ell, m = ell_m
+            
+            amp_fit = self.xp.take_along_axis(self.xp.abs(mode[idx - N :])
+            phase = self.xp.unwrap(self.xp.angle(mode))
+            intrp_amp = CubicSpline(t[idx - N :], amp)
+            intrp_phase = CubicSpline(t[idx - N :], phase[idx - N :])
+            amp_max = intrp_amp(t_match)
+            damp_max = intrp_amp.derivative()(t_match)
+            phi_match = intrp_phase(t_match)
+            omega_max = intrp_phase.derivative()(t_match)
             attach_params = dict(
                 amp=amp_max,
                 damp=damp_max,
                 omega=omega_max,
-                final_mass=self.xp.asarray(final_mass),
-                final_spin=self.xp.asarray(final_spin),
+                final_mass=final_mass,
+                final_spin=final_spin,
             )
-
-            try:
-                tmp_dt = dt.get()
-            except AttributeError:
-                tmp_dt = dt
-            num_add = int((ringdown_time / tmp_dt).max()) + 1
-            t_ringdown = t_match[:, None] + self.xp.arange(num_add)[None, :] * dt[:, None]
-
             hring, philm = compute_MR_mode_free(
-                    t_ringdown,
-                    m_1,
-                    m_2,
-                    chi_1,
-                    chi_2,
-                    attach_params,
-                    ells,
-                    mms,
-                    t_match=t_match,
-                    phi_match=phi_match,
-                    debug=False,
-                    xp=self.xp
-                )
-            
-            max_idx = idx.max().item()
-            num_to_add = (hring.shape[-1] - (modes.shape[-1] - idx)).max().item()
-            modes = self.xp.concatenate([modes, self.xp.zeros(modes.shape[:-1] + (num_to_add,))], axis=-1)
-            
-            ring_add_inds = (idx + 1)[:, None, None] + self.xp.tile(self.xp.arange(hring.shape[-1] - 1), hring.shape[:-1] + (1,))
-
-            ring_add_inds = ring_add_inds.flatten()
-            inds_bins = self.xp.tile(self.xp.arange(self.num_bin_all), (self.num_modes, hring.shape[-1] - 1, 1)).transpose(2, 0, 1).flatten()
-
-            inds_modes = self.xp.tile(self.xp.arange(self.num_modes), (self.num_bin_all, hring.shape[-1] - 1, 1)).transpose(0, 2, 1).flatten()
-            
-
-            modes[(inds_bins, inds_modes, ring_add_inds)] = hring[:, :, 1:].flatten()
-            #(2, 3), 'constant', constant_values=(4, 6)
-            """
-            # adjust this to cut off ends of shorter signals
-            
-            for ell_m, mode in hlms.items():
-p
-                #if ell_m == (5, 5):
-                
-                
-                    # print(t_match)
-                ell, m = ell_m
-                
-                amp_fit = self.xp.take_along_axis(self.xp.abs(mode[idx - N :])
-                phase = self.xp.unwrap(self.xp.angle(mode))
-                intrp_amp = CubicSpline(t[idx - N :], amp)
-                intrp_phase = CubicSpline(t[idx - N :], phase[idx - N :])
-                amp_max = intrp_amp(t_match)
-                damp_max = intrp_amp.derivative()(t_match)
-                phi_match = intrp_phase(t_match)
-                omega_max = intrp_phase.derivative()(t_match)
-                attach_params = dict(
-                    amp=amp_max,
-                    damp=damp_max,
-                    omega=omega_max,
-                    final_mass=final_mass,
-                    final_spin=final_spin,
-                )
-                hring, philm = compute_MR_mode_free(
-                    t_ringdown,
-                    m1,
-                    m2,
-                    chi1,
-                    chi2,
-                    attach_params,
-                    ell,
-                    m,
-                    t_match=t_match,
-                    phi_match=phi_match,
-                    debug=False,
-                )
-                # Construct the full IMR waveform
-                hIMR[(ell, m)] = self.xp.concatenate((hlms[(ell, m)][: idx + 1], hring[1:]))
-                t_match = t[idx]
-                t_IMR = self.xp.concatenate((t[: idx + 1], t_ringdown[1:]))"""
+                t_ringdown,
+                m1,
+                m2,
+                chi1,
+                chi2,
+                attach_params,
+                ell,
+                m,
+                t_match=t_match,
+                phi_match=phi_match,
+                debug=False,
+            )
+            # Construct the full IMR waveform
+            hIMR[(ell, m)] = self.xp.concatenate((hlms[(ell, m)][: idx + 1], hring[1:]))
+            t_match = t[idx]
+            t_IMR = self.xp.concatenate((t[: idx + 1], t_ringdown[1:]))"""
 
         """et = tttttt.perf_counter()
 
@@ -2593,7 +2620,7 @@ p
 
         distance = self.xp.asarray(distance)
         hlms = self.get_hlms(traj, m1, m2, chi1z, chi2z,
-                             num_steps, ells, mms)  #  / distance[:, None, None]
+                            num_steps, ells, mms)  #  / distance[:, None, None]
 
         phi = traj[:, 1]
 
@@ -2607,7 +2634,8 @@ p
             ],
             axis=1,
         )
-
+    
+        # 4 ms
         modes = self.compute_full_waveform(
             traj,
             hlms,
@@ -2622,11 +2650,12 @@ p
             sampling_frequency=sampling_frequency,
             nrDeltaT=None
         )
+
         self.ells = ells
         self.mms = mms
 
         self.eob_c_class.deallocate_information()
-
+        # 30 ms
         return modes
         
 

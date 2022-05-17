@@ -11,7 +11,7 @@ setDevice(4)
 
 mt = 60.0  # Total mass in solar masses
 q = 2.5
-num = int(30)
+num = int(1000)
 # was 16.82307190336287 0.001682307190336287
 m1 = np.full(num, 0.55 * mt)  # mt * q / (1.+q))
 m2 = np.full(num, 0.45 * mt)  # mt / (1.+q))
@@ -51,7 +51,7 @@ for inter in bilby_interferometers:
     #    sampling_frequency, Tobs, start_time=0)
 
 bbh = BBHWaveformTD(bilby_interferometers, use_gpu=True)
-n = 5
+n = 2
 out = bbh(
     m1,
     m2,
