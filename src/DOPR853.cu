@@ -231,8 +231,13 @@ void update_arg_and_x(
             {
                 ak_temp = ak_term[i * numEq + eq_i];
             }
-                
+
             arg[i * numEq + eq_i] = solOld[i * numEq + eq_i] + h_here * ak_temp;
+
+            if ((numEq < 4) && (eq_i < 2) && (i == 2))
+            {
+                printf("inside update: %d %d %.12e %.12e %.12e %.12e %.12e %.12e %.12e \n", eq_i, i, ak_temp, h_here, solOld[i * numEq + eq_i], xCurrent[eq_i], x[eq_i], c_term, arg[i * numEq + eq_i]);
+            }
         }
     }
 }
@@ -317,8 +322,15 @@ void add_2d_term(
     {
         for (int i = 0; i < nargs; i += 1)
         {
-            
+            if ((numEq < 4) && (eq_i < 2) && (i == 2))
+            {
+                printf("inside add 1: %d %d %.12e %.12e %.12e \n", eq_i, i, factor, term_out[i * numEq + eq_i], arr_in[i * numEq + eq_i]);
+            }
             term_out[i * numEq + eq_i] += factor * arr_in[i * numEq + eq_i];
+            if ((numEq < 4) && (eq_i < 2) && (i == 2))
+            {
+                printf("inside add 2: %d %d %.12e %.12e %.12e \n", eq_i, i, factor, term_out[i * numEq + eq_i], arr_in[i * numEq + eq_i]);
+            }
         }
     }
 }
@@ -361,22 +373,24 @@ void dormandPrinceSteps_wrap(
     int nargs,
     int numEq,
     int num_add_args,
-    SEOBNRv5 *ode_class)
+    SEOBNRv5 *ode_class,
+    int *hCoeffs_index)
 {
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
 
     // Step 1
     double c1 = 0.0;
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c1, numEq, nargs, true);
-    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k1, additionalArgs, numEq);
+    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k1, additionalArgs, numEq, hCoeffs_index);
 
     // Step 2
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
     // a21 * k1
     add_2d_term_wrap(ak_term_buffer, k1, a21, nargs, numEq);
 
+    // TODO: clean up hCoeffs_index
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c2, numEq, nargs, false);
-    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k2, additionalArgs, numEq);
+    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k2, additionalArgs, numEq, hCoeffs_index);
     
     // Step 3
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
@@ -385,7 +399,7 @@ void dormandPrinceSteps_wrap(
     add_2d_term_wrap(ak_term_buffer, k2, a32, nargs, numEq);
 
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c3, numEq, nargs, false);
-    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k3, additionalArgs, numEq);
+    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k3, additionalArgs, numEq, hCoeffs_index);
 
     // Step 4
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
@@ -394,7 +408,7 @@ void dormandPrinceSteps_wrap(
     add_2d_term_wrap(ak_term_buffer, k3, a43, nargs, numEq);
 
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c4, numEq, nargs, false);
-    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k4, additionalArgs, numEq);
+    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k4, additionalArgs, numEq, hCoeffs_index);
 
     // Step 5
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
@@ -404,7 +418,7 @@ void dormandPrinceSteps_wrap(
     add_2d_term_wrap(ak_term_buffer, k4, a54, nargs, numEq);
 
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c5, numEq, nargs, false);
-    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k5, additionalArgs, numEq);
+    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k5, additionalArgs, numEq, hCoeffs_index);
 
     // Step 6
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
@@ -414,7 +428,7 @@ void dormandPrinceSteps_wrap(
     add_2d_term_wrap(ak_term_buffer, k5, a65, nargs, numEq);
 
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c6, numEq, nargs, false);
-    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k6, additionalArgs, numEq);
+    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k6, additionalArgs, numEq, hCoeffs_index);
 
     // Step 7
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
@@ -425,7 +439,7 @@ void dormandPrinceSteps_wrap(
     add_2d_term_wrap(ak_term_buffer, k6, a76, nargs, numEq);
 
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c7, numEq, nargs, false);
-    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k7, additionalArgs, numEq);
+    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k7, additionalArgs, numEq, hCoeffs_index);
 
     // Step 8
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
@@ -437,7 +451,7 @@ void dormandPrinceSteps_wrap(
     add_2d_term_wrap(ak_term_buffer, k7, a87, nargs, numEq);
 
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c8, numEq, nargs, false);
-    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k8, additionalArgs, numEq);
+    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k8, additionalArgs, numEq, hCoeffs_index);
 
     // Step 9
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
@@ -450,7 +464,7 @@ void dormandPrinceSteps_wrap(
     add_2d_term_wrap(ak_term_buffer, k8, a98, nargs, numEq);
 
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c9, numEq, nargs, false);
-    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k9, additionalArgs, numEq);
+    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k9, additionalArgs, numEq, hCoeffs_index);
 
     // Step 10
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
@@ -464,7 +478,7 @@ void dormandPrinceSteps_wrap(
     add_2d_term_wrap(ak_term_buffer, k9, a109, nargs, numEq);
 
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c10, numEq, nargs, false);
-    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k10, additionalArgs, numEq);
+    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k10, additionalArgs, numEq, hCoeffs_index);
 
     // Step 11
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
@@ -479,7 +493,7 @@ void dormandPrinceSteps_wrap(
     add_2d_term_wrap(ak_term_buffer, k10, a1110, nargs, numEq);
 
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c11, numEq, nargs, false);
-    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k2, additionalArgs, numEq);
+    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k2, additionalArgs, numEq, hCoeffs_index);
 
     // Step 12
     set_2d_term_to_zero_wrap(ak_term_buffer, nargs, numEq);
@@ -497,7 +511,7 @@ void dormandPrinceSteps_wrap(
 
     double c12 = 1.0;
     update_arg_and_x_wrap(arg, solOld, x, xCurrent, ak_term_buffer, h, c12, numEq, nargs, false);
-    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k3, additionalArgs, numEq);
+    ode_class->ODE_Ham_align_AD_wrap(xCurrent, arg, k3, additionalArgs, numEq, hCoeffs_index);
 }
 
 CUDA_CALLABLE_MEMBER

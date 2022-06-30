@@ -31,7 +31,8 @@ cdef extern from "DOPR853.hh":
         int nargs, 
         int numEq,
         int num_add_args,
-        SEOBNRv5 *ode_class
+        SEOBNRv5 *ode_class,
+        int *hCoeffs_index
     );
 
     void error_wrap(
@@ -84,7 +85,8 @@ def dormandPrinceSteps(
         nargs, 
         numEq,
         num_add_args,
-        ode_class
+        ode_class,
+        hCoeffs_index
     ):
 
     cdef size_t x_in = x
@@ -105,6 +107,7 @@ def dormandPrinceSteps(
     cdef size_t k10_in = k10
     cdef size_t ak_term_buffer_in = ak_term_buffer
     cdef size_t ode_class_in = ode_class.conceiled_ptr
+    cdef size_t hCoeffs_index_in = hCoeffs_index
 
     dormandPrinceSteps_wrap(
         <double*> x_in,
@@ -128,6 +131,7 @@ def dormandPrinceSteps(
         numEq,
         num_add_args,
         <SEOBNRv5 *>ode_class_in,
+        <int *> hCoeffs_index_in
     )
 
 

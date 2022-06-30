@@ -24,7 +24,8 @@ void dormandPrinceSteps_wrap(
         int nargs, 
         int numEq,
         int num_add_args,
-        SEOBNRv5 *ode_class
+        SEOBNRv5 *ode_class,
+        int *hCoeffs_index
 );
 
 void error_wrap(

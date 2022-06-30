@@ -527,7 +527,7 @@ class DOPR853:
         if hInit is None:
             hInit = 0.01
 
-        hInit_orig = hInit
+        hInit_orig = self.xp.full(numSys, hInit)
         h = self.xp.full_like(x, hInit)
 
         #xOld = self.xp.zeros_like(x)
@@ -618,17 +618,18 @@ class DOPR853:
             err = self.xp.zeros_like(xTemp)
 
             nargs = nODE
-            numEq = numSys
+            numEq = numSysTemp
             num_add_args = additionalArgs.shape[0]
             # Compute the steps to iterate to the next timestep
-           
+            
+            index_here = self.xp.arange(individual_loop_flag.shape[0])[individual_loop_flag].astype(self.xp.int32)
             self.dormandPrinceSteps2(
                 xTemp,
                 xCurrent_buffer,
                 solOldTemp,
                 hTemp,
                 arg_buffer,
-                additionalArgs,
+                additionalArgsTemp,
                 k1,
                 k2,
                 k3,
@@ -643,8 +644,14 @@ class DOPR853:
                 nargs, 
                 numEq,
                 num_add_args,
-                self.ode
+                self.ode, 
+                index_here
             )
+
+            #if np.any(step_num >= 304):
+            #    breakpoint()
+            #if self.xp.any(self.xp.isnan(solNewTemp)) or solNewTemp.reshape(4, -1).shape[1] < 4:
+            #    breakpoint()
 
             self.error2(
                 err,
@@ -663,6 +670,7 @@ class DOPR853:
                 nargs
             )
 
+            
             hOldTemp[:] = hTemp
             #xOldTemp[:] = xTemp
 
@@ -678,10 +686,11 @@ class DOPR853:
             )
 
             if fix_step and self.xp.any(~flagSuccess):
-                raise ValueError("With fix_step=True, a step was denied. Must change fixed step size with hInit.")
+                hInit_orig[~flagSuccess] /= 2
+            #    raise ValueError("With fix_step=True, a step was denied. Must change fixed step size with hInit.")
 
             if fix_step:
-                hTemp[:] = hInit_orig
+                hTemp[:] = hInit_orig[individual_loop_flag]
 
             """
             self.dormandPrinceSteps(xTemp, solOldTemp, hTemp, additionalArgsTemp, *ks)
@@ -704,7 +713,10 @@ class DOPR853:
         # 0.00648 (0.00221)
             """
             solOldTemp = solOldTemp.reshape(nODE, numSysTemp)
-            solOldTemp[:, flagSuccess] = solNewTemp.reshape(nODE, numSysTemp)[:, flagSuccess]
+            try:
+                solOldTemp[:, flagSuccess] = solNewTemp.reshape(nODE, numSysTemp)[:, flagSuccess]
+            except:
+                breakpoint()
 
             xTemp[flagSuccess] = xTemp[flagSuccess] + hOldTemp[flagSuccess]
 

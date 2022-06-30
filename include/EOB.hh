@@ -375,9 +375,9 @@ class SEOBNRv5{
 
     void deallocate_information();
     void update_information(double *m1_, double *m2_, double *eta_, double *tplspin_, double *chi_S_, double *chi_A, int use_hm, int numSys_, cmplx *newtonian_prefixes_hlms_);
-    void RR_force_wrap(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys);
+    void RR_force_wrap(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys, int *hCoeffs_index);
     void root_find_scalar_all_wrap(double *pr_res, double *start_bounds, double *argsIn, double *additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args);
-    void ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys);
+    void ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys, int *hCoeffs_index);
     void IC_diss_wrap(double* out, double *pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys);
     void compute_hlms_wrap(cmplx *hlms, double *r_arr, double *phi_arr, double *pr_arr, double *L_arr,
                        double *m1_arr, double *m2_arr, double *chi1_arr, double *chi2_arr,
@@ -397,7 +397,8 @@ class SEOBNRv5{
         cmplx *newtonian_prefix,
         double h22_calib,
         int numSys,
-        int traj_length 
+        int traj_length,
+        int *hCoeffs_index
     );
 
 };

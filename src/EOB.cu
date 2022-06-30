@@ -1618,7 +1618,8 @@ void EOBGetSpinFactorizedWaveform_kernel(
     cmplx *newtonian_prefixes,
     double h22_calib,
     int numSys,
-    int traj_length
+    int traj_length,
+    int *hCoeffs_index
 )
 {
     int start, increment, start2, increment2;
@@ -1632,7 +1633,8 @@ void EOBGetSpinFactorizedWaveform_kernel(
     #endif
     for (int bin_i = start; bin_i < numSys; bin_i += increment)
     {
-        FacWaveformCoeffs hCoeffs_here = hCoeffs[bin_i];
+        int hCoeffs_ind = hCoeffs_index[bin_i];
+        FacWaveformCoeffs hCoeffs_here = hCoeffs[hCoeffs_ind];
 
         #ifdef __CUDACC__
         start2 = threadIdx.x;
@@ -1691,7 +1693,7 @@ cmplx EOBFluxCalculateNewtonianMultipoleAbs(double x, double phi, int l, int m, 
 
 CUDA_CALLABLE_MEMBER
 cmplx EOBFluxGetSpinFactorizedWaveform(double r, double phi, double pp, double v, double Hreal, int l, int m, FacWaveformCoeffs hcoeffs,
-                                       cmplx newtonian_prefix, double eta, double vPhi, double vPhi2, double Omega, double v2, double h22_calib)
+                                       cmplx newtonian_prefix, double eta, double vPhi, double vPhi2, double Omega, double v2, double h22_calib, bool printit)
 {
     cmplx auxflm = 0.0;
 
@@ -1919,6 +1921,11 @@ cmplx EOBFluxGetSpinFactorizedWaveform(double r, double phi, double pp, double v
     cmplx hlm = Tlm * Slm * rholmPwrl;
     //* Slm * rholmPwrl
     hlm *= hNewton;
+
+    if (printit)
+    {
+        printf("init8: %d %d %.12e %.12e %.12e %.12e %.12e %.12e \n", l, m, hcoeffs.rho22v2, hcoeffs.rho22v3, hcoeffs.rho22v4, hcoeffs.rho22v5, hcoeffs.rho22v6, hcoeffs.rho22v6l);
+    }
     return hlm;
 }
 
@@ -2520,8 +2527,14 @@ double EOBSpinFactorizedFlux(double *values, double m_1, double m_2, double chiS
             ind_real = (prefixes_start_ind + 2 * ind_lm + 0) * numSys + i;
             ind_imag = (prefixes_start_ind + 2 * ind_lm + 1) * numSys + i;
             newtonian_prefix = cmplx(newtonian_prefixes[ind_real], newtonian_prefixes[ind_imag]);
+
+            bool printit = false;
+
+            if ((l == 2) && (m == 2) && (blockIdx.x == 0) && (threadIdx.x < 2))
+                printit = true;
+
             hLM = EOBFluxGetSpinFactorizedWaveform(
-                r, phi, pp, v, H, l, m, hCoeffs, newtonian_prefix, eta, vPhi, vPhi2, omega, v2, h22_calib);
+                r, phi, pp, v, H, l, m, hCoeffs, newtonian_prefix, eta, vPhi, vPhi2, omega, v2, h22_calib, printit);
 
             // hLM += hT
 
@@ -2537,7 +2550,7 @@ double EOBSpinFactorizedFlux(double *values, double m_1, double m_2, double chiS
 
 
 CUDA_CALLABLE_MEMBER
-void RR_force(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys, int i, FacWaveformCoeffs hCoeffs)
+void RR_force(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys, int i, FacWaveformCoeffs hCoeffs, bool prin)
 {
     int ind1 = 0 * numSys + i;
     int ind2 = 1 * numSys + i;
@@ -2609,12 +2622,16 @@ void RR_force(double *force_out, double *grad_out, double *args, double *additio
     force_out[0 * numSys + i] = Fr;
     force_out[1 * numSys + i] = Fphi;
 
+    if ((prin)  && (i < 2) && (numSys < 4) && (r < 3.0))
+    {
+        //printf("init5: %d %.12e %.12e %.12e %.12e %d \n", i, flux, H_val, prefixes[0], prefixes[1], prefixes_start_ind);
+    }
     //printf("%.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e \n", tplspin, flux, nu, f_over_om, H_val, vPhi, chiS, chiA);
 
 }
 
 CUDA_KERNEL
-void RR_force_kernel(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys, FacWaveformCoeffs *hCoeffs)
+void RR_force_kernel(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys, FacWaveformCoeffs *hCoeffs, int *hCoeffs_index)
 {
     int start, increment;
     #ifdef __CUDACC__
@@ -2627,8 +2644,9 @@ void RR_force_kernel(double *force_out, double *grad_out, double *args, double *
 #endif
     for (int bin_i = start; bin_i < numSys; bin_i += increment)
     {
-        FacWaveformCoeffs hCoeffs_here = hCoeffs[bin_i];
-        RR_force(force_out, grad_out, args, additionalArgs, numSys, bin_i, hCoeffs_here);
+        int hCoeffs_ind = hCoeffs_index[bin_i];
+        FacWaveformCoeffs hCoeffs_here = hCoeffs[hCoeffs_ind];
+        RR_force(force_out, grad_out, args, additionalArgs, numSys, bin_i, hCoeffs_here, false);
     }
 }
 
@@ -2646,7 +2664,7 @@ double IC_diss(double pr, double *args, double *additionalArgs, double *grad_out
     int omega_ind = 4 * numSys + i;
     additionalArgs[omega_ind] = grad_out[3 * numSys + i];
 
-    RR_force(force_out, grad_temp_force, args, additionalArgs, numSys, i, hCoeffs);
+    RR_force(force_out, grad_temp_force, args, additionalArgs, numSys, i, hCoeffs, false);
 
     double d2Hdr2 = hess_out[0 * numSys + i];
     double d2HdrdL = hess_out[12 * numSys + i]; // [3,0]
@@ -2984,7 +3002,7 @@ void root_find_all_wrap(double *xOut, double *x0In, double *argsIn, double *addi
 
 
 CUDA_KERNEL
-void ODE_Ham_align_AD(double *x, double *argsIn, double *k, double *additionalArgsIn, int numSys, FacWaveformCoeffs *hCoeffs)
+void ODE_Ham_align_AD(double *x, double *argsIn, double *k, double *additionalArgsIn, int numSys, FacWaveformCoeffs *hCoeffs, int *hCoeffs_index)
 { // C_grad_HTMalign_AC(double values[], int num_points, double ders[]){
     int start, increment;
 
@@ -3051,8 +3069,9 @@ void ODE_Ham_align_AD(double *x, double *argsIn, double *k, double *additionalAr
         // adjust omega
         additionalArgs[omega_ind] = dHdpphi;
 
-        FacWaveformCoeffs hCoeffs_here = hCoeffs[bin_i];
-        RR_force(force_out, grad_temp_force, args, additionalArgs, BLOCK, i, hCoeffs_here);
+        int hCoeffs_ind = hCoeffs_index[bin_i];
+        FacWaveformCoeffs hCoeffs_here = hCoeffs[hCoeffs_ind];
+        RR_force(force_out, grad_temp_force, args, additionalArgs, BLOCK, i, hCoeffs_here, true);
 
         // TODO: implement tortoise
         // return array([dHdr, dHdphi, dHdpr, dHdpphi])
@@ -3074,6 +3093,11 @@ void ODE_Ham_align_AD(double *x, double *argsIn, double *k, double *additionalAr
         k[ode3_out] = -dHdr + Fr;
         k[ode4_out] = -dHdphi + Fphi;
         // deriv = np.array([grad[n],grad[n+1],-grad[0]+RR_f[0],-grad[1]+RR_f[1]])
+        if ((bin_i < 2) && (numSys < 4))
+        {
+            printf("init3: %d %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n", bin_i, k[ode3_out], r, phi, pr, pphi, omega, Fr, Fphi);
+        }
+
     }
 }
 
@@ -3316,15 +3340,15 @@ void SEOBNRv5::deallocate_information()
     allocated = false;
 }
 
-void SEOBNRv5::RR_force_wrap(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys)
+void SEOBNRv5::RR_force_wrap(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys, int *hCoeffs_index)
 {
     #ifdef __CUDACC__
     int num_blocks = (int)std::ceil((numSys + BLOCK - 1) / BLOCK);
-    RR_force_kernel<<<num_blocks, BLOCK>>>(force_out, grad_out, args, additionalArgs, numSys, hCoeffs);
+    RR_force_kernel<<<num_blocks, BLOCK>>>(force_out, grad_out, args, additionalArgs, numSys, hCoeffs, hCoeffs_index);
     cudaDeviceSynchronize();
     gpuErrchk(cudaGetLastError());
 #else
-    RR_force_kernel(force_out, grad_out, args, additionalArgs, numSys, hCoeffs);
+    RR_force_kernel(force_out, grad_out, args, additionalArgs, numSys, hCoeffs, hCoeffs_index);
 #endif
  
 }
@@ -3369,7 +3393,8 @@ void SEOBNRv5::EOBGetSpinFactorizedWaveform_wrap(
     cmplx *newtonian_prefix,
     double h22_calib,
     int numSys,
-    int traj_length
+    int traj_length,
+    int *hCoeffs_ind
 )
 {
     #ifdef __CUDACC__
@@ -3389,7 +3414,8 @@ void SEOBNRv5::EOBGetSpinFactorizedWaveform_wrap(
         newtonian_prefix,
         h22_calib,
         numSys,
-        traj_length);
+        traj_length,
+        hCoeffs_ind);
 
     cudaDeviceSynchronize();
     gpuErrchk(cudaGetLastError());
@@ -3410,19 +3436,20 @@ void SEOBNRv5::EOBGetSpinFactorizedWaveform_wrap(
             newtonian_prefix,
             h22_calib,
             numSys,
-            traj_length);
+            traj_length,
+            hCoeffs_ind);
     #endif
 }
 
-void SEOBNRv5::ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys)
+void SEOBNRv5::ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys, int *hCoeffs_ind)
 {
 #ifdef __CUDACC__
     int num_blocks = (int)std::ceil((numSys + BLOCK - 1) / BLOCK);
-    ODE_Ham_align_AD<<<num_blocks, BLOCK>>>(x, arg, k, additionalArgs, numSys, hCoeffs);
+    ODE_Ham_align_AD<<<num_blocks, BLOCK>>>(x, arg, k, additionalArgs, numSys, hCoeffs, hCoeffs_ind);
 
     cudaDeviceSynchronize();
     gpuErrchk(cudaGetLastError());
 #else
-    ODE_Ham_align_AD(x, arg, k, additionalArgs, numSys, hCoeffs);
+    ODE_Ham_align_AD(x, arg, k, additionalArgs, numSys, hCoeffs, hCoeffs_ind);
 #endif
 }

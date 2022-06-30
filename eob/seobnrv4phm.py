@@ -90,7 +90,8 @@ class StoppingCriterion:
         additionalArgsIn = additionalArgs.flatten()
         derivs = self.xp.zeros((nargs, numSys_here)).flatten()
         x = self.xp.zeros(1)
-        self.eob_c_class.ODE_Ham_align_AD(x, args, derivs, additionalArgsIn, numSys_here)
+
+        self.eob_c_class.ODE_Ham_align_AD(x, args, derivs, additionalArgsIn, numSys_here, index_update.astype(self.xp.int32))
 
         derivs = derivs.reshape(nargs, numSys_here)
 
@@ -118,24 +119,34 @@ class StoppingCriterion:
         stop[inds_remaining] += 4 * ((r[inds_remaining] < 6.0) & (dprdt[inds_remaining] > 0.0))
         inds_remaining = ~(stop.astype(bool))
 
-        inds_here = inds_remaining * (step_num > 5)
+        inds_here = inds_remaining * (step_num[index_update] > 5)
         if self.xp.any(inds_here):
             num_still_here = self.xp.sum(inds_here).item()
-
-            get_inds = (step_num[inds_here, None] + self.xp.tile(self.xp.arange(-4, 0), (num_still_here, 1))).flatten()
-
+            try:
+                get_inds = (step_num[index_update][inds_here, None] + self.xp.tile(self.xp.arange(-4, 0), (num_still_here, 1))).flatten()
+            except IndexError:
+                breakpoint()
             still_have = self.xp.arange(len(inds_here))[inds_here]
             
             first_check = r[inds_here] < 6.0
-            second_check = omega[inds_here] < self.old_omegas[(step_num - 1, still_have)]
+            
+            try:
+                second_check = omega[inds_here] < self.old_omegas[(step_num[index_update[still_have]] - 1, index_update[still_have])]
+            except ValueError:
+                breakpoint()
 
             close_old_omegas = self.old_omegas[(get_inds, self.xp.repeat(still_have, 4))].reshape(num_still_here, 4)
             third_check = self.xp.all(self.xp.diff(close_old_omegas, axis=1) < 0.0, axis=1)
             
             stop[inds_here] += 5 * (first_check) * (second_check) * (third_check)
 
-        self.old_omegas[(step_num, index_update)] = omega
-   
+        else:
+            still_have = self.xp.ones_like(index_update, dtype=bool)
+
+        try:
+            self.old_omegas[(step_num[index_update[still_have]], index_update[still_have])] = omega[index_update[still_have]]
+        except:
+            breakpoint()
         """if self.use_gpu and :
             stop = denseOutput[(step_num.get(), np.zeros_like(
                 step_num.get()), np.arange(len(step_num)))] < 3.0
@@ -197,6 +208,7 @@ class CubicSplineInterpolantTD:
         self.c3 = lower_diag = self.xp.zeros_like(B)
         self.y = y_all
 
+        breakpoint()
         self.interpolate_arrays(
             x, y_all, B, upper_diag, diag, lower_diag, lengths, num_bin_all, nsubs,
         )
@@ -2045,12 +2057,12 @@ class SEOBNRv4PHM:
         t, traj, num_steps = self.integrator.integrate(
             condBound.copy(), argsData
         )
-
+        
         # steps are axis 0
         last_ind = self.xp.where(self.xp.diff(t[1:].astype(bool).astype(int), axis=0) == -1)
 
-        t_stop = t[last_ind]
-
+        t_stop = t[last_ind][np.argsort(last_ind[-1])]
+        
         # The starting point of fine integration
         t_desired = t_stop - step_back
 
@@ -2074,7 +2086,8 @@ class SEOBNRv4PHM:
         )
         # TODO: check integrator difference if needed
 
-        num_steps = num_steps.astype(np.int32)
+        # add initial step
+        num_steps = num_steps.astype(np.int32) + 1
 
         num_steps_max = num_steps.max().item()
 
@@ -2164,10 +2177,11 @@ class SEOBNRv4PHM:
                 newtonian_prefixes,
                 h22_calib,
                 numSys,
-                traj_length 
+                traj_length,
+                self.xp.arange(numSys, dtype=self.xp.int32)
             )
             modes[:, mode_i, :] = tmp.reshape(numSys, traj_length)
-
+        breakpoint()
         """
         
         # TODO: check dimensionality (unit to 1?)
@@ -2281,13 +2295,14 @@ class SEOBNRv4PHM:
             self.num_bin_all,
             use_gpu=self.use_gpu,
         )
-        num_pts_new = ((t_in[:, -1] - t_in[:, 0]) / delta_T).astype(int) + 1
+        num_pts_new = ((t_in[(self.xp.arange(t_in.shape[0]), phi_spline.lengths - 1)] - t_in[:, 0]) / delta_T).astype(int) + 1
         max_num_pts = num_pts_new.max().item()
 
         t_new = self.xp.tile(self.xp.arange(max_num_pts), (dynamics.shape[0], 1)) * delta_T[:, None] + t_in[:, 0][:, None]
 
         inds_bad = t_new > t_in.max(axis=1)[:, None]
         t_new[inds_bad] = self.xp.tile(t_in.max(axis=1)[:, None], (1, max_num_pts))[inds_bad]
+
         omega_orb_mine_sparse = phi_spline(t_in, deriv_order=1)
         # TODO: check this determination of the peak?
         omega_orb_mine = phi_spline(t_new, deriv_order=1)
@@ -2312,14 +2327,16 @@ class SEOBNRv4PHM:
             use_gpu=self.use_gpu,
         )
 
+        breakpoint()
         result = splines(t_new)
 
         modes = result[:, 0::2, :] + 1j * result[:, 1::2, :]
 
+        breakpoint()
         modes *= self.xp.exp(-1j * mms[None, :, None] * phi_orb_interp[:, None, :])
 
         #modes = modestmp.copy()
-
+        
         if nrDeltaT is None:
             nrDeltaT = EOBGetNRSpinPeakDeltaTv4(2, 2, m_1, m_2, chi_1, chi_2)
 
@@ -2616,6 +2633,7 @@ p
         t, traj, num_steps = self.run_trajectory(
             r0, pphi0, pr0, m1, m2, chi1z, chi2z, fs=fs
         )
+
         self.traj = traj
 
         distance = self.xp.asarray(distance)

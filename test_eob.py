@@ -6,21 +6,21 @@ from eob.seobnrv4phm import BBHWaveformTD, SEOBNRv4PHM
 from bbhx.utils.constants import PC_SI
 import numpy as np
 from cupy.cuda.runtime import setDevice
-setDevice(4)
+setDevice(2)
 
 
 mt = 60.0  # Total mass in solar masses
 q = 2.5
-num = int(1000)
+num = int(4)
 # was 16.82307190336287 0.001682307190336287
 m1 = np.full(num, 0.55 * mt)  # mt * q / (1.+q))
 m2 = np.full(num, 0.45 * mt)  # mt / (1.+q))
 # chi1x,
 # chi1y,
-chi1z = np.full(num, 0.0000)
+chi1z = np.full(num, 0.2)
 # chi2x,
 # chi2y,
-chi2z = np.full(num, 0.0000)
+chi2z = np.full(num, 0.3)
 distance = np.full(num, 100.0) * 1e6 * PC_SI  # Mpc -> m
 phiRef = np.full(num, 0.0)
 inc = np.full(num, np.pi / 3.0)
@@ -28,6 +28,11 @@ ra = np.full(num, np.pi / 4.0)
 dec = np.full(num, np.pi / 5.0)
 psi = np.full(num, np.pi / 6.0)
 geocent_time = np.full(num, 10.0)
+
+chi1z[0::2] *= 0.98
+chi2z[0::2] *= 1.01
+
+
 
 eob = SEOBNRv4PHM(use_gpu=True)  # gpu_available)
 # eob(m1, m2, chi1z, chi2z, distance, phiRef)

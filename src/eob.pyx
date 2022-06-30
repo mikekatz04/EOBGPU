@@ -21,9 +21,9 @@ cdef extern from "EOB.hh":
         SEOBNRv5();
         void deallocate_information();
         void update_information(double *m1_, double *m2_, double *eta_, double *tplspin_, double *chi_S_, double *chi_A, int use_hm, int numSys_, cmplx *newtonian_prefixes_hlms);
-        void RR_force_wrap(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys);
+        void RR_force_wrap(double *force_out, double *grad_out, double *args, double *additionalArgs, int numSys, int *hCoeffs_index);
         void root_find_scalar_all_wrap(double *pr_res, double *start_bounds, double *argsIn, double *additionalArgsIn, int max_iter, double err, int numBinAll, int num_args, int num_add_args);
-        void ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys);
+        void ODE_Ham_align_AD_wrap(double *x, double *arg, double *k, double *additionalArgs, int numSys, int *hCoeffs_ind);
         void IC_diss_wrap(double* out, double *pr, double *args, double *additionalArgs, double *grad_out, double *grad_temp_force, double *hess_out, double *force_out, int numSys);
         void compute_hlms_wrap(cmplx *hlms, double *r_arr, double *phi_arr, double *pr_arr, double *L_arr,
                        double *m1_arr, double *m2_arr, double *chi1_arr, double *chi2_arr,
@@ -43,7 +43,8 @@ cdef extern from "EOB.hh":
             cmplx *newtonian_prefix,
             double h22_calib,
             int numSys,
-            int traj_length 
+            int traj_length,
+            int *hCoeffs_ind
         );
 
 @pointer_adjust
@@ -143,24 +144,26 @@ cdef class SEOBNRv5Class:
         self.cobj.IC_diss_wrap(<double *>out_in, <double *>pr_in, <double *>args_in, <double *>additionalArgs_in, <double *>grad_out_in, <double *>grad_temp_force_in, <double *>hess_out_in, <double *>force_out_in, numSys)
 
     @pointer_adjust
-    def RR_force(self, force_out, grad_out, args, additionalArgs, numSys):
+    def RR_force(self, force_out, grad_out, args, additionalArgs, numSys, hCoeffs_index):
 
         cdef size_t force_out_in = force_out
         cdef size_t grad_out_in = grad_out
         cdef size_t args_in = args
         cdef size_t additionalArgs_in = additionalArgs
+        cdef size_t hCoeffs_index_in = hCoeffs_index
 
-        self.cobj.RR_force_wrap(<double *>force_out_in, <double *>grad_out_in, <double *>args_in, <double *>additionalArgs_in, numSys)
+        self.cobj.RR_force_wrap(<double *>force_out_in, <double *>grad_out_in, <double *>args_in, <double *>additionalArgs_in, numSys, <int *>hCoeffs_index_in)
 
     @pointer_adjust
-    def ODE_Ham_align_AD(self, x, arg, k, additionalArgs, numSys):
+    def ODE_Ham_align_AD(self, x, arg, k, additionalArgs, numSys, hCoeffs_index):
 
         cdef size_t x_in = x
         cdef size_t arg_in = arg
         cdef size_t k_in = k
         cdef size_t additionalArgs_in = additionalArgs
+        cdef size_t hCoeffs_index_in = hCoeffs_index
 
-        self.cobj.ODE_Ham_align_AD_wrap(<double*> x_in, <double*> arg_in, <double*> k_in, <double*> additionalArgs_in, numSys)
+        self.cobj.ODE_Ham_align_AD_wrap(<double*> x_in, <double*> arg_in, <double*> k_in, <double*> additionalArgs_in, numSys, <int *>hCoeffs_index_in)
 
     @pointer_adjust
     def root_find_scalar_all(self, pr_res, start_bounds, argsIn, additionalArgsIn, max_iter, err, numBinAll, num_args, num_add_args):
@@ -213,7 +216,8 @@ cdef class SEOBNRv5Class:
             newtonian_prefix,
             h22_calib,
             numSys,
-            traj_length 
+            traj_length,
+            hCoeffs_index 
         ):
     
         cdef size_t out_in = out
@@ -226,6 +230,7 @@ cdef class SEOBNRv5Class:
         cdef size_t eta_in = eta
         cdef size_t vPhiInput_in = vPhiInput
         cdef size_t newtonian_prefix_in = newtonian_prefix
+        cdef size_t hCoeffs_index_in = hCoeffs_index
 
         self.cobj.EOBGetSpinFactorizedWaveform_wrap(
             <cmplx *>out_in,
@@ -242,7 +247,8 @@ cdef class SEOBNRv5Class:
             <cmplx *>newtonian_prefix_in,
             h22_calib,
             numSys,
-            traj_length 
+            traj_length,
+            <int *>hCoeffs_index_in
         )
 
     property conceiled_ptr:

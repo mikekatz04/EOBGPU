@@ -151,7 +151,7 @@ void fill_B_TD(double *t_arr, double *y_all, double *B, double *upper_diag, doub
              i < length;
              i += diff2)
         {
-
+            if (i == 0) printf("%d %d\n", bin_i, length);
             prep_splines_TD(i, length, interp_i, ninterps, B, upper_diag, diag, lower_diag, t_arr, y_all, numBinAll, bin_i);
         }
     }
@@ -257,7 +257,7 @@ void set_spline_constants_TD(double *t_arr, double *y, double *c1, double *c2, d
              i < length - 1;
              i += diff2)
         {
-
+            if (i == 0) printf("fill coeffs: %d %d\n", bin_i, length);
             // TODO: check if there is faster way to do this
             double dt = t_arr[(i + 1) * numBinAll + bin_i] - t_arr[(i)*numBinAll + bin_i];
 
