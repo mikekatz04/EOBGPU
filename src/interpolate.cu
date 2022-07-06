@@ -142,7 +142,7 @@ void fill_B_TD(double *t_arr, double *y_all, double *B, double *upper_diag, doub
          interp_i += diff1)
     {
 
-        int bin_i = int(interp_i / nsubs);
+        int bin_i = interp_i % numBinAll;
         int length = lengths[bin_i];
 
         int start2 = 0;
@@ -158,7 +158,7 @@ void fill_B_TD(double *t_arr, double *y_all, double *B, double *upper_diag, doub
 }
 
 CUDA_KERNEL
-void interpolate_kern_TD(int *mAll, int n, double *a, double *b, double *c, double *d, int nsubs)
+void interpolate_kern_TD(int *mAll, int n, double *a, double *b, double *c, double *d, int nsubs, int numBinAll)
 {
 #ifdef __CUDACC__
 
@@ -176,7 +176,7 @@ void interpolate_kern_TD(int *mAll, int n, double *a, double *b, double *c, doub
          interp_i < n; // 2 for re and im
          interp_i += diff1)
     {
-        int bin_i = int(interp_i / nsubs);
+        int bin_i = interp_i % numBinAll;
 
         int m = mAll[bin_i];
         int ind_i, ind_im1, ind_ip1;
@@ -248,7 +248,7 @@ void set_spline_constants_TD(double *t_arr, double *y, double *c1, double *c2, d
          interp_i += diff1)
     {
 
-        int bin_i = int(interp_i / nsubs);
+        int bin_i = interp_i % numBinAll;
         int length = lengths[bin_i];
 
         int start2 = 0;
@@ -287,7 +287,7 @@ void interpolate_TD(double *t_arr, double *propArrays,
     gpuErrchk(cudaGetLastError());
 
     // printf("%d after fill b\n", jj);
-    interpolate_kern_TD<<<nblocks, NUM_THREADS_INTERPOLATE>>>(lengths, ninterps, lower_diag, diag, upper_diag, B, nsubs);
+    interpolate_kern_TD<<<nblocks, NUM_THREADS_INTERPOLATE>>>(lengths, ninterps, lower_diag, diag, upper_diag, B, nsubs, numBinAll);
     cudaDeviceSynchronize();
     gpuErrchk(cudaGetLastError());
 
@@ -299,7 +299,7 @@ void interpolate_TD(double *t_arr, double *propArrays,
     fill_B_TD(t_arr, propArrays, B, upper_diag, diag, lower_diag, ninterps, numBinAll, lengths, nsubs);
 
     // printf("%d after fill b\n", jj);
-    interpolate_kern_TD(lengths, ninterps, lower_diag, diag, upper_diag, B, nsubs);
+    interpolate_kern_TD(lengths, ninterps, lower_diag, diag, upper_diag, B, nsubs, numBinAll);
 
     set_spline_constants_TD(t_arr, propArrays, c1, c2, c3, B,
                             ninterps, lengths, numBinAll, nsubs);

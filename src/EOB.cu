@@ -1922,10 +1922,10 @@ cmplx EOBFluxGetSpinFactorizedWaveform(double r, double phi, double pp, double v
     //* Slm * rholmPwrl
     hlm *= hNewton;
 
-    if (printit)
-    {
-        printf("init8: %d %d %.12e %.12e %.12e %.12e %.12e %.12e \n", l, m, hcoeffs.rho22v2, hcoeffs.rho22v3, hcoeffs.rho22v4, hcoeffs.rho22v5, hcoeffs.rho22v6, hcoeffs.rho22v6l);
-    }
+    //if (printit)
+    //{
+    //    printf("init8: %d %d %.12e %.12e %.12e %.12e %.12e %.12e \n", l, m, hcoeffs.rho22v2, hcoeffs.rho22v3, hcoeffs.rho22v4, hcoeffs.rho22v5, hcoeffs.rho22v6, hcoeffs.rho22v6l);
+    //}
     return hlm;
 }
 

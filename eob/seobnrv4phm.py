@@ -122,18 +122,13 @@ class StoppingCriterion:
         inds_here = inds_remaining * (step_num[index_update] > 5)
         if self.xp.any(inds_here):
             num_still_here = self.xp.sum(inds_here).item()
-            try:
-                get_inds = (step_num[index_update][inds_here, None] + self.xp.tile(self.xp.arange(-4, 0), (num_still_here, 1))).flatten()
-            except IndexError:
-                breakpoint()
+            get_inds = (step_num[index_update][inds_here, None] + self.xp.tile(self.xp.arange(-4, 0), (num_still_here, 1))).flatten()
+
             still_have = self.xp.arange(len(inds_here))[inds_here]
             
             first_check = r[inds_here] < 6.0
             
-            try:
-                second_check = omega[inds_here] < self.old_omegas[(step_num[index_update[still_have]] - 1, index_update[still_have])]
-            except ValueError:
-                breakpoint()
+            second_check = omega[inds_here] < self.old_omegas[(step_num[index_update[still_have]] - 1, index_update[still_have])]
 
             close_old_omegas = self.old_omegas[(get_inds, self.xp.repeat(still_have, 4))].reshape(num_still_here, 4)
             third_check = self.xp.all(self.xp.diff(close_old_omegas, axis=1) < 0.0, axis=1)
@@ -143,10 +138,8 @@ class StoppingCriterion:
         else:
             still_have = self.xp.ones_like(index_update, dtype=bool)
 
-        try:
-            self.old_omegas[(step_num[index_update[still_have]], index_update[still_have])] = omega[index_update[still_have]]
-        except:
-            breakpoint()
+        self.old_omegas[(step_num[index_update[still_have]], index_update[still_have])] = omega[index_update[still_have]]
+
         """if self.use_gpu and :
             stop = denseOutput[(step_num.get(), np.zeros_like(
                 step_num.get()), np.arange(len(step_num)))] < 3.0
@@ -208,9 +201,8 @@ class CubicSplineInterpolantTD:
         self.c3 = lower_diag = self.xp.zeros_like(B)
         self.y = y_all
 
-        breakpoint()
         self.interpolate_arrays(
-            x, y_all, B, upper_diag, diag, lower_diag, lengths, num_bin_all, nsubs,
+            x, y_all, B, upper_diag, diag, lower_diag, self.lengths, num_bin_all, nsubs,
         )
         # TODO: need to fix last point
         self.x = x
@@ -335,8 +327,9 @@ class CubicSplineInterpolantTD:
         x3 = x2 * x
 
         inds0 = self.xp.repeat(inds0.flatten(), self.nsubs)
-        inds = np.tile(inds, (self.nsubs, 1)).flatten()
+        inds_orig = inds.copy()
 
+        inds = np.tile(inds, (self.nsubs, 1)).reshape(self.nsubs, self.num_bin_all, -1).transpose(1, 0, 2).flatten()
         #flattens itself
         inds_subs = self.xp.repeat(self.xp.tile(self.xp.arange(self.nsubs), (self.num_bin_all, 1))[:, :, None], tnew.shape[1])
         # get spline coefficients
@@ -1430,7 +1423,7 @@ def EOBGetNRSpinPeakOmegaDotV4(ell, m, eta, a):
 EOBGetNRSpinPeakOmegaDotV4 = xp.vectorize(EOBGetNRSpinPeakOmegaDotV4)
 
 def EOBCalculateNQCCoefficientsV4_freeattach(
-    amplitude, phase, r, pr, omega_orb, ell, m, time_peak, time, m1, m2, chi1, chi2,nrDeltaT, xp=None
+    amplitude, phase, r, pr, omega_orb, ell, m, time_peak, time, m1, m2, chi1, chi2,nrDeltaT, num_pts_new, xp=None
 ):
     """
     This is just like the SEOBNRv4HM function but allows nrDeltaT to be passed in, instead of
@@ -1457,7 +1450,7 @@ def EOBCalculateNQCCoefficientsV4_freeattach(
     idx = xp.argmin(xp.abs(time[:, None]-nrTimePeak[:, :, None]), axis=-1)
     N = 7
 
-    num_t_fit = (time.shape[1] - (idx - N)).astype(xp.int32)
+    num_t_fit = (num_pts_new[:, None] - (idx - N)).astype(xp.int32)
     num_t_fit_max = num_t_fit.max().item()
     t_fit_inds = xp.tile((idx - N)[:, :, None], num_t_fit_max) + xp.tile(xp.arange(num_t_fit_max), (amplitude.shape[:-1] + (1,)))
 
@@ -1530,6 +1523,7 @@ def EOBCalculateNQCCoefficientsV4_freeattach(
 
     nrTimePeak_in = nrTimePeak.T.reshape(-1, 1)
     Q = xp.zeros((num_bin_all, num_modes, 3, 3))
+    
     for i in range(3):
         Q[:, :, i, 0] = intrp_q1LM(nrTimePeak_in, deriv_order=i).reshape(num_modes, num_bin_all).T
         Q[:, :, i, 1] = intrp_q2LM(nrTimePeak_in, deriv_order=i).reshape(num_modes, num_bin_all).T
@@ -1538,7 +1532,6 @@ def EOBCalculateNQCCoefficientsV4_freeattach(
     # Build the RHS
 
     # Compute the NR fits
-
     ell = xp.tile(ell, (num_bin_all, 1)).flatten()
     m = xp.tile(m, (num_bin_all, 1)).flatten()
     m1 = xp.repeat(m1, num_modes)
@@ -2181,7 +2174,7 @@ class SEOBNRv4PHM:
                 self.xp.arange(numSys, dtype=self.xp.int32)
             )
             modes[:, mode_i, :] = tmp.reshape(numSys, traj_length)
-        breakpoint()
+
         """
         
         # TODO: check dimensionality (unit to 1?)
@@ -2314,8 +2307,8 @@ class SEOBNRv4PHM:
         tmp = hlm_interp * self.xp.exp(1j * mms[None, :, None] * phi_orb[:, None, :])
 
         hlms_real = self.xp.zeros((self.num_bin_all, 2 * self.num_modes, hlm_interp.shape[-1]))
-        hlms_real[:, 0::2, :] = tmp.real
-        hlms_real[:, 1::2, :] = tmp.imag
+        hlms_real[:, :self.num_modes, :] = tmp.real
+        hlms_real[:, self.num_modes:, :] = tmp.imag
 
         splines = CubicSplineInterpolantTD(
             t_in.T.flatten().copy(),
@@ -2327,12 +2320,10 @@ class SEOBNRv4PHM:
             use_gpu=self.use_gpu,
         )
 
-        breakpoint()
         result = splines(t_new)
 
         modes = result[:, 0::2, :] + 1j * result[:, 1::2, :]
 
-        breakpoint()
         modes *= self.xp.exp(-1j * mms[None, :, None] * phi_orb_interp[:, None, :])
 
         #modes = modestmp.copy()
@@ -2379,6 +2370,7 @@ class SEOBNRv4PHM:
                 chi_1,
                 chi_2,
                 nrDeltaT_in,
+                num_pts_new,
                 xp=self.xp
             )
 
@@ -2393,7 +2385,7 @@ class SEOBNRv4PHM:
         # 13 ms (part below is 1ms)
         # Evaluate the correction
         NQC_correction = EOBNonQCCorrection(r_new[:, None, :], None, pr_new[:, None, :], None, omega_orb_mine[:, None, :], NQC_coeffs, xp=self.xp)
-
+        
         # Modify the modes
         modes *= NQC_correction
         # update these
@@ -2429,7 +2421,7 @@ class SEOBNRv4PHM:
 
         t_match_all -= 10.0 * ((ells[None, :] == 5) & (mms[None, :] == 5))
 
-        num_t_fit = (t_new.shape[1] - (idx - N)).astype(xp.int32)
+        num_t_fit = (num_pts_new - (idx - N)).astype(xp.int32)
         num_t_fit_max = num_t_fit.max().item()
 
         t_fit_inds = xp.tile((idx - N)[:, None], num_t_fit_max)[:, None, :] + xp.tile(xp.arange(num_t_fit_max), (amp.shape[:-1] + (1,)))
@@ -2440,6 +2432,7 @@ class SEOBNRv4PHM:
         phase_fit = xp.take_along_axis(phase, t_fit_inds, axis=-1)
 
         num_t_fit = self.xp.tile(num_t_fit, (self.num_modes,))
+        breakpoint()
         intrp_amp = CubicSplineInterpolantTD(
             t_fit.T.flatten().copy(),
             amplitude_fit.transpose(
@@ -2478,7 +2471,7 @@ class SEOBNRv4PHM:
         num_add = int((ringdown_time / tmp_dt).max()) + 1
         t_ringdown = t_match[:, None] + self.xp.arange(num_add)[None, :] * dt[:, None]
 
-    
+        # TODO: change it so the number added is the actual num add for each not max
         # 13 ms (this following part is 3)
         hring, philm = compute_MR_mode_free(
                 t_ringdown,
@@ -2495,6 +2488,7 @@ class SEOBNRv4PHM:
                 xp=self.xp
             )
         
+        # TODO: correct weird thing in modes seen earlier in code
         max_idx = idx.max().item()
         num_to_add = (hring.shape[-1] - (modes.shape[-1] - idx)).max().item()
         modes = self.xp.concatenate([modes, self.xp.zeros(modes.shape[:-1] + (num_to_add,))], axis=-1)

@@ -6,7 +6,7 @@ from eob.seobnrv4phm import BBHWaveformTD, SEOBNRv4PHM
 from bbhx.utils.constants import PC_SI
 import numpy as np
 from cupy.cuda.runtime import setDevice
-setDevice(2)
+setDevice(3)
 
 
 mt = 60.0  # Total mass in solar masses
@@ -32,6 +32,9 @@ geocent_time = np.full(num, 10.0)
 chi1z[0::2] *= 0.98
 chi2z[0::2] *= 1.01
 
+m1[0::2] *= 0.98
+m2[0::2] *= 1.005
+
 
 
 eob = SEOBNRv4PHM(use_gpu=True)  # gpu_available)
@@ -56,7 +59,7 @@ for inter in bilby_interferometers:
     #    sampling_frequency, Tobs, start_time=0)
 
 bbh = BBHWaveformTD(bilby_interferometers, use_gpu=True)
-n = 2
+n = 0
 out = bbh(
     m1,
     m2,
@@ -80,7 +83,7 @@ out = bbh(
     fill=False,
     return_type="geocenter_td"  # "detector_fd"
 )
-
+breakpoint()
 #for i, inter in enumerate(bilby_interferometers):
 #    inter.set_strain_data_from_frequency_domain_strain(
 #        out[0, i].get(), sampling_frequency=sampling_frequency, duration=Tobs)
