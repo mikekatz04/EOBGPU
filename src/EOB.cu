@@ -498,8 +498,9 @@ void RR_force_2PN(double *force_out, double *args, double *additionalArgs)
     force_out[1 * BLOCK + i] = Fphi;
 }
 
-
+#ifdef __CUDACC__
 #include "math_constants.h"
+#endif
 
 // define lgam, using CUDA's lgamma as done for cupyx.scipy.special.gammaln
 CUDA_CALLABLE_MEMBER double lgam(double x)
@@ -3093,10 +3094,10 @@ void ODE_Ham_align_AD(double *x, double *argsIn, double *k, double *additionalAr
         k[ode3_out] = -dHdr + Fr;
         k[ode4_out] = -dHdphi + Fphi;
         // deriv = np.array([grad[n],grad[n+1],-grad[0]+RR_f[0],-grad[1]+RR_f[1]])
-        if ((bin_i < 2) && (numSys < 4))
-        {
-            printf("init3: %d %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n", bin_i, k[ode3_out], r, phi, pr, pphi, omega, Fr, Fphi);
-        }
+        //if ((bin_i < 2) && (numSys < 4))
+        //{
+        //    printf("init3: %d %.12e %.12e %.12e %.12e %.12e %.12e %.12e %.12e\n", bin_i, k[ode3_out], r, phi, pr, pphi, omega, Fr, Fphi);
+        //}
 
     }
 }

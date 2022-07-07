@@ -1,10 +1,10 @@
-from .pytdinterp_cpu import interpolate_TD_wrap as interpolate_TD_wrap_cpu
+"""from .pytdinterp_cpu import interpolate_TD_wrap as interpolate_TD_wrap_cpu
 from .pytdinterp_cpu import TDInterp_wrap2 as TDInterp_wrap_cpu
 from .pyEOB_cpu import ODE_Ham_align_AD as ODE_Ham_align_AD_cpu
 from .pyEOB_cpu import ODE as ODE_cpu
 from .pyEOB_cpu import root_find_scalar_all as root_find_scalar_all_cpu
 from .pyEOB_cpu import root_find_all as root_find_all_cpu
-#from .pyEOB_cpu import compute_hlms as compute_hlms_cpu
+#from .pyEOB_cpu import compute_hlms as compute_hlms_cpu"""
 import numpy as np
 import warnings
 from bbhx.utils.constants import *
@@ -656,6 +656,7 @@ class BBHWaveformTD:
         fill=False,
         fs=20.0,
         return_type="like",
+        combine_modes=True,
     ):
 
         # TODO: if t_obs_end = t_mrg
@@ -678,14 +679,6 @@ class BBHWaveformTD:
 
         self.num_bin_all = len(m1)
 
-        self.data_length = data_length = int(Tobs * sampling_frequency)
-
-        self.dataTime = (
-            self.xp.arange(data_length, dtype=self.xp.float64)
-            * 1.0
-            / sampling_frequency
-        )
-
         if modes is None:
             self.num_modes = len(self.amp_phase_gen.allowable_modes_hlms)
         else:
@@ -695,7 +688,7 @@ class BBHWaveformTD:
         num = 1
         st = tttttt.perf_counter()
         for _ in range(num):"""
-        return self.amp_phase_gen(
+        hlm_out = self.amp_phase_gen(
             m1,
             m2,
             # chi1x,
@@ -709,6 +702,16 @@ class BBHWaveformTD:
             modes=modes,
             fs=fs,
         )
+
+        self.data_length = data_length = int(Tobs * sampling_frequency)
+
+        #self.dataTime = (
+        #    self.xp.arange(data_length, dtype=self.xp.float64)
+        #    * 1.0
+        #    / sampling_frequency
+        #)
+        template_channels = self.xp.zeros((self.num_bin_all, self.data_length), dtype=self.xp.complex128)
+        template_channels[:, :hlm_out.shape[-1]] = hlm_out.sum(axis=1)  # if combine_modes else hlm_out
         """et = tttttt.perf_counter()
 
         print("amp phase", self.num_bin_all, (et - st) /
@@ -721,19 +724,17 @@ class BBHWaveformTD:
         print("interp", self.num_bin_all, (et - st) /
               num, (et - st) / num / self.num_bin_all)
         """
-        template_channels = template_channels.reshape(
-            self.num_bin_all, self.data_length)
+        
         if return_type == "geocenter_td":
             return template_channels
 
         """st = tttttt.perf_counter()
         for _ in range(num):"""
 
-        breakpoint()
         template_channels_fd_plus = self.xp.fft.rfft(
-            template_channels.real, axis=-1) * 1 / sampling_frequency
+            template_channels.real, axis=-1)  #  * 1 / sampling_frequency
         template_channels_fd_cross = self.xp.fft.rfft(
-            template_channels.imag, axis=-1) * 1 / sampling_frequency
+            template_channels.imag, axis=-1)  # * 1 / sampling_frequency
 
         if return_type == "geocenter_fd":
             return (template_channels_fd_plus, template_channels_fd_cross)
@@ -747,14 +748,20 @@ class BBHWaveformTD:
         if return_type == "detector_fd":
             f = self.xp.fft.rfftfreq(
                 self.data_length, 1.0 / sampling_frequency)
+            Fplus[:] = 1.0
+            Fcross[:] = 0.0
+            time_shift[:] = 0.0
             signal_out = (Fplus.T[:, :, None] * template_channels_fd_plus[:, None, :] + Fcross.T[:, :, None] *
                           template_channels_fd_cross[:, None, :]) * self.xp.exp(-1j * 2. * np.pi * f[None, None, :] * time_shift.T[:, :, None])
             return signal_out
 
+        if return_type != "like":
+            raise ValueError("return_type must be geocenter_td, geocenter_fd, like, or detector_fd.")
+
         template_channels_fd_plus = template_channels_fd_plus.flatten()
         template_channels_fd_cross = template_channels_fd_cross.flatten()
 
-        num_threads_sum = 1024
+        num_threads_sum = 32
 
         num_temps_per_bin = int(
             np.ceil((self.fd_data_length + num_threads_sum - 1) / num_threads_sum))
@@ -768,20 +775,24 @@ class BBHWaveformTD:
         Fcross = Fcross.flatten()
         time_shift = time_shift.flatten()
 
+        Fplus[:] = 1.0
+        Fcross[:] = 0.0
+        time_shift[:] = 0.0
         self.all_in_one_likelihood(
             temp_sums, template_channels_fd_plus, template_channels_fd_cross, self.data, self.psd, Fplus, Fcross, time_shift, df, self.num_bin_all, self.nChannels, self.fd_data_length
         )
-
+    
         like = -1./2. * df * 4. * \
             temp_sums.reshape(-1, self.num_bin_all,
                               self.nChannels).sum(axis=(0, 2))
-
+        
         """et = tttttt.perf_counter()
         print("final part", self.num_bin_all, (et - st) /
               num, (et - st) / num / self.num_bin_all)
-
-        breakpoint()"""
+        """
+        breakpoint()
         return like
+        
 
 """
 class ODEWrapper:
@@ -2432,7 +2443,7 @@ class SEOBNRv4PHM:
         phase_fit = xp.take_along_axis(phase, t_fit_inds, axis=-1)
 
         num_t_fit = self.xp.tile(num_t_fit, (self.num_modes,))
-        breakpoint()
+
         intrp_amp = CubicSplineInterpolantTD(
             t_fit.T.flatten().copy(),
             amplitude_fit.transpose(
@@ -2632,7 +2643,7 @@ p
 
         distance = self.xp.asarray(distance)
         hlms = self.get_hlms(traj, m1, m2, chi1z, chi2z,
-                            num_steps, ells, mms)  #  / distance[:, None, None]
+                            num_steps, ells, mms)
 
         phi = traj[:, 1]
 
@@ -2665,6 +2676,8 @@ p
 
         self.ells = ells
         self.mms = mms
+
+        modes /= distance[:, None, None]
 
         self.eob_c_class.deallocate_information()
         # 30 ms

@@ -7,16 +7,16 @@ try:
     from .pydopr853 import controllerSuccess as controllerSuccess_gpu
     gpu_available = True
     from cupy.cuda.runtime import setDevice
-    setDevice(4)
+    #setDevice(4)
 
 except ModuleNotFoundError:
     import numpy as xp
     gpu_available = False
 
-from .pydopr853_cpu import dormandPrinceSteps as dormandPrinceSteps_cpu
+"""from .pydopr853_cpu import dormandPrinceSteps as dormandPrinceSteps_cpu
 from .pydopr853_cpu import error as error_cpu
 from .pydopr853_cpu import controllerSuccess as controllerSuccess_cpu
-
+"""
 import matplotlib.pyplot as plt
 
 xp.random.seed(5)

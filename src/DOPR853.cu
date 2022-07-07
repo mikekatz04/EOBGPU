@@ -234,10 +234,10 @@ void update_arg_and_x(
 
             arg[i * numEq + eq_i] = solOld[i * numEq + eq_i] + h_here * ak_temp;
 
-            if ((numEq < 4) && (eq_i < 2) && (i == 2))
-            {
-                printf("inside update: %d %d %.12e %.12e %.12e %.12e %.12e %.12e %.12e \n", eq_i, i, ak_temp, h_here, solOld[i * numEq + eq_i], xCurrent[eq_i], x[eq_i], c_term, arg[i * numEq + eq_i]);
-            }
+            //if ((numEq < 4) && (eq_i < 2) && (i == 2))
+            //{
+            //    printf("inside update: %d %d %.12e %.12e %.12e %.12e %.12e %.12e %.12e \n", eq_i, i, ak_temp, h_here, solOld[i * numEq + eq_i], xCurrent[eq_i], x[eq_i], c_term, arg[i * numEq + eq_i]);
+            //}
         }
     }
 }

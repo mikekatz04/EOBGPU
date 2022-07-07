@@ -151,7 +151,7 @@ void fill_B_TD(double *t_arr, double *y_all, double *B, double *upper_diag, doub
              i < length;
              i += diff2)
         {
-            if (i == 0) printf("%d %d\n", bin_i, length);
+            //if (i == 0) printf("%d %d\n", bin_i, length);
             prep_splines_TD(i, length, interp_i, ninterps, B, upper_diag, diag, lower_diag, t_arr, y_all, numBinAll, bin_i);
         }
     }
@@ -257,7 +257,7 @@ void set_spline_constants_TD(double *t_arr, double *y, double *c1, double *c2, d
              i < length - 1;
              i += diff2)
         {
-            if (i == 0) printf("fill coeffs: %d %d\n", bin_i, length);
+            //if (i == 0) printf("fill coeffs: %d %d\n", bin_i, length);
             // TODO: check if there is faster way to do this
             double dt = t_arr[(i + 1) * numBinAll + bin_i] - t_arr[(i)*numBinAll + bin_i];
 
@@ -548,18 +548,15 @@ void TDInterp2(cmplx *templateChannels, double *dataTime, double *tsAll, double 
 #endif
 }
 
-#define NUM_THREADS_SUM 1024
+#define NUM_THREADS_SUM 32
 CUDA_KERNEL
 void all_in_one_likelihood(cmplx *temp_sum, cmplx *hp_fd, cmplx *hc_fd, cmplx *data, double *psd, double *Fplus, double *Fcross, double *time_shift, double df, int num_bin_all, int nchannels, int data_length)
 {
-    cmplx sdata[NUM_THREADS_SUM];
+    CUDA_SHARED cmplx sdata[NUM_THREADS_SUM];
     const cmplx I(0.0, 1.0);
 
     unsigned int tid = threadIdx.x;
     unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (i >= data_length)
-        return;
 
     double Fplus_bin_channel, Fcross_bin_channel, time_shift_bin_channel;
     cmplx temp_val;
@@ -567,43 +564,49 @@ void all_in_one_likelihood(cmplx *temp_sum, cmplx *hp_fd, cmplx *hc_fd, cmplx *d
     cmplx h_i, hp_i_source, hc_i_source, data_i;
     for (int bin_i = blockIdx.y; bin_i < num_bin_all; bin_i += gridDim.y)
     {
-        for (int channel_i = blockIdx.z; channel_i < nchannels; channel_i += gridDim.y)
+        for (int channel_i = blockIdx.z; channel_i < nchannels; channel_i += gridDim.z)
         {
             sdata[tid] = 0.0;
             CUDA_SYNC_THREADS;
 
-            Fplus_bin_channel = Fplus[channel_i * num_bin_all + bin_i];
-            Fcross_bin_channel = Fcross[channel_i * num_bin_all + bin_i];
-            time_shift_bin_channel = time_shift[channel_i * num_bin_all + bin_i];
-            data_i = data[channel_i * data_length + i];
-            hp_i_source = hp_fd[bin_i * data_length + i];
-            hc_i_source = hc_fd[bin_i * data_length + i];
+            if (i < data_length)
+            {
+                Fplus_bin_channel = Fplus[channel_i * num_bin_all + bin_i];
+                Fcross_bin_channel = Fcross[channel_i * num_bin_all + bin_i];
+                time_shift_bin_channel = time_shift[channel_i * num_bin_all + bin_i];
+                
+                data_i = data[channel_i * data_length + i];
+                hp_i_source = hp_fd[bin_i * data_length + i];
+                hc_i_source = hc_fd[bin_i * data_length + i];
 
-            f = df * i;
+                f = df * i;
+                h_i = (Fplus_bin_channel * hp_i_source + Fcross_bin_channel * hc_i_source) * gcmplx::exp(-I * 2. * PI * f * time_shift_bin_channel);
 
-            h_i = (Fplus_bin_channel * hp_i_source + Fcross_bin_channel * hc_i_source) * gcmplx::exp(-I * 2. * PI * f * time_shift_bin_channel);
+                temp_val = (data_i - h_i);
+                psd_val = psd[channel_i * data_length + i];
+                sdata[tid] = (gcmplx::conj(temp_val) * temp_val) / psd_val;
+            }
 
-            temp_val = (data_i - h_i);
-            psd_val = psd[channel_i * data_length + i];
-            sdata[tid] = (gcmplx::conj(temp_val) * temp_val) / psd_val;
-
-            // if ((i == 4000) && (bin_i == 0) && (channel_i == 0))
-            //   printf("%.10e, %.10e, %.10e, %.10e, %.10e, %.10e, %.10e\n", h_i.real(), h_i.imag(), data_i.real(), data_i.imag(), psd_val, sdata[tid].real(), sdata[tid].imag());
-
+            //if ((i == 10000) && (bin_i < 2) && (channel_i == 0))
+            //{   
+            //    printf("%d %d %d %.10e, %.10e, %.10e, %.10e, %.10e, %.10e, %.10e\n", i, bin_i, channel_i, h_i.real(), h_i.imag(), data_i.real(), data_i.imag(), psd_val, sdata[tid].real(), sdata[tid].imag());
+            //}
             CUDA_SYNC_THREADS;
-
+            
             for (unsigned int s = 1; s < blockDim.x; s *= 2)
             {
                 if (tid % (2 * s) == 0)
                 {
                     sdata[tid] += sdata[tid + s];
+                    //if ((bin_i == 1) && (blockIdx.x == 0) && (channel_i == 0) && (s == 1))
+                    //printf("%d %d %d %d %.18e %.18e %.18e %.18e %.18e %.18e %d\n", bin_i, channel_i, s, tid, sdata[tid].real(), sdata[tid].imag(), tmp.real(), tmp.imag(), sdata[tid + s].real(), sdata[tid + s].imag(), s + tid);
                 }
-
                 CUDA_SYNC_THREADS;
             }
             CUDA_SYNC_THREADS;
             if (tid == 0)
                 temp_sum[(blockIdx.x * num_bin_all + bin_i) * nchannels + channel_i] = sdata[0];
+            CUDA_SYNC_THREADS;
         }
     }
 }
