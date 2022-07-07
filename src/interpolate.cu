@@ -548,7 +548,7 @@ void TDInterp2(cmplx *templateChannels, double *dataTime, double *tsAll, double 
 #endif
 }
 
-#define NUM_THREADS_SUM 32
+#define NUM_THREADS_SUM 1024
 CUDA_KERNEL
 void all_in_one_likelihood(cmplx *temp_sum, cmplx *hp_fd, cmplx *hc_fd, cmplx *data, double *psd, double *Fplus, double *Fcross, double *time_shift, double df, int num_bin_all, int nchannels, int data_length)
 {

@@ -748,9 +748,7 @@ class BBHWaveformTD:
         if return_type == "detector_fd":
             f = self.xp.fft.rfftfreq(
                 self.data_length, 1.0 / sampling_frequency)
-            Fplus[:] = 1.0
-            Fcross[:] = 0.0
-            time_shift[:] = 0.0
+
             signal_out = (Fplus.T[:, :, None] * template_channels_fd_plus[:, None, :] + Fcross.T[:, :, None] *
                           template_channels_fd_cross[:, None, :]) * self.xp.exp(-1j * 2. * np.pi * f[None, None, :] * time_shift.T[:, :, None])
             return signal_out
@@ -761,7 +759,7 @@ class BBHWaveformTD:
         template_channels_fd_plus = template_channels_fd_plus.flatten()
         template_channels_fd_cross = template_channels_fd_cross.flatten()
 
-        num_threads_sum = 32
+        num_threads_sum = 1024
 
         num_temps_per_bin = int(
             np.ceil((self.fd_data_length + num_threads_sum - 1) / num_threads_sum))
@@ -775,9 +773,6 @@ class BBHWaveformTD:
         Fcross = Fcross.flatten()
         time_shift = time_shift.flatten()
 
-        Fplus[:] = 1.0
-        Fcross[:] = 0.0
-        time_shift[:] = 0.0
         self.all_in_one_likelihood(
             temp_sums, template_channels_fd_plus, template_channels_fd_cross, self.data, self.psd, Fplus, Fcross, time_shift, df, self.num_bin_all, self.nChannels, self.fd_data_length
         )
