@@ -582,15 +582,17 @@ void all_in_one_likelihood(cmplx *temp_sum, cmplx *hp_fd, cmplx *hc_fd, cmplx *d
                 f = df * i;
                 h_i = (Fplus_bin_channel * hp_i_source + Fcross_bin_channel * hc_i_source) * gcmplx::exp(-I * 2. * PI * f * time_shift_bin_channel);
 
+                //if ((i < 10) && (bin_i == 0) && (channel_i == 0))
+                //{   
+                //    printf("%d %d %d %.10e, %.10e, %.10e, %.10e, %.10e, %.10e, %.10e\n", i, bin_i, channel_i, h_i.real(), h_i.imag());
+                //}
                 temp_val = (data_i - h_i);
                 psd_val = psd[channel_i * data_length + i];
                 sdata[tid] = (gcmplx::conj(temp_val) * temp_val) / psd_val;
             }
 
-            //if ((i == 10000) && (bin_i < 2) && (channel_i == 0))
-            //{   
-            //    printf("%d %d %d %.10e, %.10e, %.10e, %.10e, %.10e, %.10e, %.10e\n", i, bin_i, channel_i, h_i.real(), h_i.imag(), data_i.real(), data_i.imag(), psd_val, sdata[tid].real(), sdata[tid].imag());
-            //}
+            
+
             CUDA_SYNC_THREADS;
             
             for (unsigned int s = 1; s < blockDim.x; s *= 2)

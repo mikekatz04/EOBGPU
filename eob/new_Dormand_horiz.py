@@ -686,7 +686,11 @@ class DOPR853:
             )
 
             if fix_step and self.xp.any(~flagSuccess):
-                hInit_orig[~flagSuccess] /= 2
+                try:
+                    adjust_set_size = self.xp.arange(len(hInit_orig))[individual_loop_flag][~flagSuccess]
+                    hInit_orig[adjust_set_size] /= 2
+                except IndexError:
+                    breakpoint()
             #    raise ValueError("With fix_step=True, a step was denied. Must change fixed step size with hInit.")
 
             if fix_step:

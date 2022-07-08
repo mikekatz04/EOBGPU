@@ -322,15 +322,17 @@ void add_2d_term(
     {
         for (int i = 0; i < nargs; i += 1)
         {
-            if ((numEq < 4) && (eq_i < 2) && (i == 2))
-            {
-                printf("inside add 1: %d %d %.12e %.12e %.12e \n", eq_i, i, factor, term_out[i * numEq + eq_i], arr_in[i * numEq + eq_i]);
-            }
+            //if ((numEq < 4) && (eq_i < 2) && (i == 2))
+            //{
+            //    printf("inside add 1: %d %d %.12e %.12e %.12e \n", eq_i, i, factor, term_out[i * numEq + eq_i], arr_in[i * numEq + eq_i]);
+            //}
+
             term_out[i * numEq + eq_i] += factor * arr_in[i * numEq + eq_i];
-            if ((numEq < 4) && (eq_i < 2) && (i == 2))
-            {
-                printf("inside add 2: %d %d %.12e %.12e %.12e \n", eq_i, i, factor, term_out[i * numEq + eq_i], arr_in[i * numEq + eq_i]);
-            }
+            
+            //if ((numEq < 4) && (eq_i < 2) && (i == 2))
+            //{
+            //   printf("inside add 2: %d %d %.12e %.12e %.12e \n", eq_i, i, factor, term_out[i * numEq + eq_i], arr_in[i * numEq + eq_i]);
+            //}
         }
     }
 }

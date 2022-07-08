@@ -138,8 +138,9 @@ class StoppingCriterion:
         else:
             still_have = self.xp.ones_like(index_update, dtype=bool)
 
-        self.old_omegas[(step_num[index_update[still_have]], index_update[still_have])] = omega[index_update[still_have]]
-
+        check_old = self.old_omegas.copy()
+        self.old_omegas[(step_num[index_update[still_have]], index_update[still_have])] = omega[still_have]
+        
         """if self.use_gpu and :
             stop = denseOutput[(step_num.get(), np.zeros_like(
                 step_num.get()), np.arange(len(step_num)))] < 3.0
@@ -657,10 +658,11 @@ class BBHWaveformTD:
         fs=20.0,
         return_type="like",
         combine_modes=True,
+        bilby_start_ind=0
     ):
 
         # TODO: if t_obs_end = t_mrg
-
+        self.sampling_frequency = sampling_frequency
         m1 = np.atleast_1d(m1)
         m2 = np.atleast_1d(m2)
         # chi1x = np.atleast_1d(chi1x)
@@ -711,7 +713,13 @@ class BBHWaveformTD:
         #    / sampling_frequency
         #)
         template_channels = self.xp.zeros((self.num_bin_all, self.data_length), dtype=self.xp.complex128)
-        template_channels[:, :hlm_out.shape[-1]] = hlm_out.sum(axis=1)  # if combine_modes else hlm_out
+
+        # adjust lengths
+        length_out = hlm_out.shape[-1] if hlm_out.shape[-1] < template_channels.shape[-1] else template_channels.shape[-1]
+        try:
+            template_channels[:, :length_out] = hlm_out[:, :, :length_out].sum(axis=1)  # if combine_modes else hlm_out
+        except ValueError:
+            breakpoint()
         """et = tttttt.perf_counter()
 
         print("amp phase", self.num_bin_all, (et - st) /
@@ -731,10 +739,15 @@ class BBHWaveformTD:
         """st = tttttt.perf_counter()
         for _ in range(num):"""
 
-        template_channels_fd_plus = self.xp.fft.rfft(
-            template_channels.real, axis=-1)  #  * 1 / sampling_frequency
+        template_channels_fd_plus = self.xp.fft.rfft(template_channels.real, axis=-1)  #  * 1 / sampling_frequency
         template_channels_fd_cross = self.xp.fft.rfft(
             template_channels.imag, axis=-1)  # * 1 / sampling_frequency
+
+        # adjust to bilby loaded interferometers
+        template_channels_fd_plus[:, :bilby_start_ind] = 0.0
+        template_channels_fd_cross[:, :bilby_start_ind] = 0.0
+
+        self.templates_out = [template_channels_fd_plus, template_channels_fd_cross]
 
         if return_type == "geocenter_fd":
             return (template_channels_fd_plus, template_channels_fd_cross)
@@ -756,6 +769,18 @@ class BBHWaveformTD:
         if return_type != "like":
             raise ValueError("return_type must be geocenter_td, geocenter_fd, like, or detector_fd.")
 
+    def get_ll(self, params, sampling_frequency=1024, return_complex=False, return_cupy=False, **kwargs):
+
+        # setup kwargs specific for likelihood
+        kwargs["return_type"] = "geocenter_fd"
+
+        template_channels_fd_plus, template_channels_fd_cross = self(*params, sampling_frequency=sampling_frequency, **kwargs)
+
+        ra, dec, psi, geocent_time = params[-4:]
+
+        Fplus, Fcross, time_shift = self.get_detector_information(
+            ra, dec, geocent_time, psi)
+
         template_channels_fd_plus = template_channels_fd_plus.flatten()
         template_channels_fd_cross = template_channels_fd_cross.flatten()
 
@@ -766,7 +791,7 @@ class BBHWaveformTD:
 
         temp_sums = self.xp.zeros(
             num_temps_per_bin * self.num_bin_all * self.nChannels, dtype=self.xp.complex128)
-        dt = 1/sampling_frequency
+        dt = 1/self.sampling_frequency
         T = self.data_length * dt
         df = 1/T
         Fplus = Fplus.flatten()
@@ -776,7 +801,7 @@ class BBHWaveformTD:
         self.all_in_one_likelihood(
             temp_sums, template_channels_fd_plus, template_channels_fd_cross, self.data, self.psd, Fplus, Fcross, time_shift, df, self.num_bin_all, self.nChannels, self.fd_data_length
         )
-    
+
         like = -1./2. * df * 4. * \
             temp_sums.reshape(-1, self.num_bin_all,
                               self.nChannels).sum(axis=(0, 2))
@@ -785,7 +810,16 @@ class BBHWaveformTD:
         print("final part", self.num_bin_all, (et - st) /
               num, (et - st) / num / self.num_bin_all)
         """
-        breakpoint()
+
+        if not return_complex:
+            like = like.real
+        
+        if self.use_gpu and return_cupy is False:
+            try:
+                like = like.get()
+            except AttributeError:
+                pass
+
         return like
         
 
@@ -2031,7 +2065,8 @@ class SEOBNRv4PHM:
             self.num_args,
             self.num_add_args_total,
         )
-
+        if self.xp.any(self.xp.isnan(r0)):
+            breakpoint()
         return r0, pphi0, pr0
 
     def run_trajectory(self, r0, pphi0, pr0, m_1, m_2, chi_1, chi_2, fs=20.0, step_back=10.0, fine_step=0.05, **kwargs):
@@ -2056,7 +2091,7 @@ class SEOBNRv4PHM:
         t, traj, num_steps = self.integrator.integrate(
             condBound.copy(), argsData
         )
-        
+
         # steps are axis 0
         last_ind = self.xp.where(self.xp.diff(t[1:].astype(bool).astype(int), axis=0) == -1)
 
@@ -2064,8 +2099,11 @@ class SEOBNRv4PHM:
         
         # The starting point of fine integration
         t_desired = t_stop - step_back
+        try:
+            idx_restart = self.xp.argmin(self.xp.abs(t - t_desired[None, :]), axis=0)
 
-        idx_restart = self.xp.argmin(self.xp.abs(t - t_desired[None, :]), axis=0)
+        except ValueError:
+            breakpoint()
 
         prep_inds = self.xp.tile(self.xp.arange(t.shape[0]), (self.num_bin_all, 1)).T
 
@@ -2117,7 +2155,7 @@ class SEOBNRv4PHM:
         nu = mu / M
 
 
-        additionalArgsIn = self.xp.tile(self.additionalArgs, (1, traj_length))
+        additionalArgsIn = self.xp.repeat(self.additionalArgs[:, :, None], traj_length, axis=-1).flatten()
 
         argsIn = self.xp.asarray([r.flatten(), phi.flatten(), pr.flatten(), pphi.flatten()]).flatten()
         gradient = self.xp.zeros((numSys_eff * self.num_args,))
@@ -2126,6 +2164,7 @@ class SEOBNRv4PHM:
         argsIn_circ = self.xp.asarray([r.flatten(), phi.flatten(), self.xp.zeros_like(pphi).flatten(), pphi.flatten()]).flatten()
         gradient_circ = self.xp.zeros((numSys_eff * self.num_args,))
         grad_Ham_align_AD_gpu(argsIn_circ, gradient_circ, additionalArgsIn, numSys_eff)
+        
         gradient_circ = gradient_circ.reshape((self.num_args, numSys, traj_length))
         gradient = gradient.reshape((self.num_args, numSys, traj_length))
 
@@ -2350,6 +2389,7 @@ class SEOBNRv4PHM:
         inds_fix = ((self.xp.abs(m_1 - m_2) < 1e-4) & (self.xp.abs(chi_1) < 1e-4) & (np.abs(chi_2)< 1e-4)) | ((self.xp.abs(m_1 - m_2) < 1e-4) & (self.xp.abs(chi_1 - chi_2) < 1e-4))
 
         if self.xp.any(inds_fix):
+            breakpoint()
             raise NotImplementedError
         
         # TODO setup inds fix
@@ -2394,6 +2434,7 @@ class SEOBNRv4PHM:
         
         # Modify the modes
         modes *= NQC_correction
+
         # update these
         amp = self.xp.abs(modes)
         phase = self.xp.unwrap(self.xp.angle(modes))
@@ -2501,14 +2542,20 @@ class SEOBNRv4PHM:
         
         ring_add_inds = (idx + 1)[:, None, None] + self.xp.tile(self.xp.arange(hring.shape[-1] - 1), hring.shape[:-1] + (1,))
 
+        max_ringdown_inds = ring_add_inds.max(axis=-1)
         ring_add_inds = ring_add_inds.flatten()
         inds_bins = self.xp.tile(self.xp.arange(self.num_bin_all), (self.num_modes, hring.shape[-1] - 1, 1)).transpose(2, 0, 1).flatten()
 
         inds_modes = self.xp.tile(self.xp.arange(self.num_modes), (self.num_bin_all, hring.shape[-1] - 1, 1)).transpose(0, 2, 1).flatten()
         
-
         modes[(inds_bins, inds_modes, ring_add_inds)] = hring[:, :, 1:].flatten()
     
+        fix = self.xp.tile(self.xp.arange(modes.shape[-1]), (self.num_bin_all, self.num_modes, 1)) > max_ringdown_inds[:, :, None]
+
+        modes[fix] = 0.0
+        # fix anything above maximum ringdown piece to zero
+
+
         # 16 ms
         #(2, 3), 'constant', constant_values=(4, 6)
 
